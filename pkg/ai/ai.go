@@ -8,9 +8,15 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+type AIProvider struct{}
+
+func NewAIProvider() *AIProvider {
+	return &AIProvider{}
+}
+
 // AskAIStream 呼叫 AI 导师 (流式版)
 // 注意返回值：我们不再返回拼接好的 string，而是直接把 openai 的“水龙头 (Stream)”返回出去！
-func AskAIStream(ctx context.Context, code string, language string, actualOutput string) (*openai.ChatCompletionStream, error) {
+func (p *AIProvider) AskAIStream(ctx context.Context, code string, language string, actualOutput string) (*openai.ChatCompletionStream, error) {
 	// 1. 替换为你的真实 API Key
 	apiKey := config.AppConfig.AI.APIKey
 

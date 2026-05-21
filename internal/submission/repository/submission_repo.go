@@ -14,6 +14,7 @@ type SubmissionRepository interface {
 	PushToJudgeQueue(ctx context.Context, taskBytes []byte) error
 	GetSubmissionByID(ctx context.Context, id string) (*model.Submission, error)
 	GetSubmissionsByUserID(ctx context.Context, userID uint, page, limit int) (int64, []model.Submission, error)
+	UpdateSubmissionStatus(ctx context.Context, id uint, status string) error
 
 	// 🚨 新增：专门获取用户 AC 过的所有题目 ID
 	GetACProblemIDsByUserID(ctx context.Context, userID uint) ([]uint, error)
@@ -28,6 +29,12 @@ func NewSubmissionRepository() SubmissionRepository {
 // 2. 落地实现
 func (r *submissionRepoMysql) CreateSubmission(ctx context.Context, sub *model.Submission) error {
 	return mysql.DB.WithContext(ctx).Create(sub).Error
+}
+
+func (r *submissionRepoMysql) UpdateSubmissionStatus(ctx context.Context, id uint, status string) error {
+	return mysql.DB.WithContext(ctx).Model(&model.Submission{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"status": status,
+	}).Error
 }
 
 func (r *submissionRepoMysql) PushToJudgeQueue(ctx context.Context, taskBytes []byte) error {

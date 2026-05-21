@@ -10,8 +10,9 @@ import (
 
 // AuthMiddleware 是验证 JWT 的保安
 func AuthMiddleware() gin.HandlerFunc {
-	var tokenString string
+
 	return func(c *gin.Context) {
+		var tokenString string
 		// 1. 行业规范：前端发请求时，必须把 Token 放在 HTTP 头部的 "Authorization" 字段里
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" {

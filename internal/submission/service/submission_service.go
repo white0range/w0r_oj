@@ -55,6 +55,10 @@ func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto
 
 	// 呼叫仓管推队列
 	if err := s.repo.PushToJudgeQueue(ctx, taskBytes); err != nil {
+		submission.Status = "judge_failed"
+		if err2 := s.repo.UpdateSubmissionStatus(ctx, submission.ID, submission.Status); err2 != nil {
+			return nil, fmt.Errorf("更新状态失败: %w, 推送判题队列失败: %w", err2, err)
+		}
 		return nil, fmt.Errorf("推送判题队列失败: %w", err)
 	}
 

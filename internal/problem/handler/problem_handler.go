@@ -59,7 +59,7 @@ func (h *ProblemHandler) GetProblemList(c *gin.Context) {
 	limit, _ := strconv.Atoi(limitStr)
 	// 🛡️ 极其关键的安全处理：优雅地获取 userID，防止断言宕机
 	var uid uint = 0
-	if id, exists := c.Get("userid"); exists {
+	if id, exists := c.Get("userID"); exists {
 		uid = id.(uint) // 只有确保存在时，才进行类型断言
 	}
 

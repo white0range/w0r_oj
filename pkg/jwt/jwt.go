@@ -11,7 +11,10 @@ import (
 
 // 公司的最高机密：签名密钥！
 // 绝对不能泄露，如果有黑客拿到了这串乱码，他就能自己伪造咱们 OJ 平台的手环了
-var jwtSecret = []byte(config.AppConfig.JWT.Secret)
+// var jwtSecret = []byte(config.AppConfig.JWT.Secret)
+func getJWTSecret() []byte {
+	return []byte(config.AppConfig.JWT.Secret)
+}
 
 // GenerateToken 负责为登录成功的用户生成专属手环
 // 传入用户的 ID 和用户名，把它们封印在手环里
@@ -29,7 +32,7 @@ func GenerateToken(user *model.User) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	// 3. 用咱们公司的最高机密盖章，生成最终发给用户的字符串
-	return token.SignedString(jwtSecret)
+	return token.SignedString(getJWTSecret())
 }
 
 // ParseToken 负责验证手环的真伪，并把里面的数据（Payload）提取出来
@@ -39,7 +42,7 @@ func ParseToken(tokenString string) (*jwt.MapClaims, error) {
 	// 1. 解析并校验 Token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// 把咱们公司的绝密印章提供给解析器，用来比对签名
-		return jwtSecret, nil
+		return getJWTSecret(), nil
 	})
 
 	// 2. 如果解析失败，或者手环过期了、被篡改了

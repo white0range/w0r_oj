@@ -1,50 +1,56 @@
 import { reactive } from 'vue'
+import { clearSession, parseToken, persistSession, readSession } from '../utils/session'
 
-function parseToken(token) {
-  if (!token) return {}
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return {
-      username: payload.username || '',
-      role: payload.role || 0,
-      user_id: payload.user_id || 0,
-    }
-  } catch { return {} }
-}
+const session = readSession()
 
-const saved = parseToken(localStorage.getItem('token') || '')
-
-// 全局共享的用户状态
 export const store = reactive({
-  token: localStorage.getItem('token') || '',
-  username: localStorage.getItem('username') || saved.username || '',
-  role: parseInt(localStorage.getItem('role') || String(saved.role || '0')),
+  token: session.token,
+  userId: session.userId,
+  username: session.username,
+  role: session.role,
 
   get isLoggedIn() {
-    return !!this.token
+    return Boolean(this.token)
   },
 
   get isAdmin() {
     return this.role === 1
   },
 
-  login(token, username, role) {
-    // 如果没有传入 username/role，从 token 中解析
+  login(token) {
     const parsed = parseToken(token)
+
     this.token = token
-    this.username = username || parsed.username || ''
-    this.role = role ?? parsed.role ?? 0
-    localStorage.setItem('token', token)
-    localStorage.setItem('username', this.username)
-    localStorage.setItem('role', String(this.role))
+    this.userId = parsed.userId || 0
+    this.username = parsed.username || ''
+    this.role = parsed.role || 0
+
+    persistSession({
+      token: this.token,
+      userId: this.userId,
+      username: this.username,
+      role: this.role,
+    })
+  },
+
+  hydrateProfile(profile) {
+    this.userId = profile.id || this.userId
+    this.username = profile.username || this.username
+    this.role = profile.role ?? this.role
+
+    persistSession({
+      token: this.token,
+      userId: this.userId,
+      username: this.username,
+      role: this.role,
+    })
   },
 
   logout() {
     this.token = ''
+    this.userId = 0
     this.username = ''
     this.role = 0
-    localStorage.removeItem('token')
-    localStorage.removeItem('username')
-    localStorage.removeItem('role')
-  }
+    clearSession()
+  },
 })

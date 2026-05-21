@@ -1,184 +1,256 @@
 <template>
-  <div class="submissions-page">
-    <div class="page-header">
-      <h1>我的提交记录</h1>
-      <span class="subtitle" v-if="!loading && total > 0">共 {{ total }} 条记录</span>
-    </div>
-
-    <div class="loading-center" v-if="loading">
-      <div class="spinner spinner-dark" style="width:32px;height:32px;border-width:3px"></div>
-    </div>
-
-    <template v-else-if="submissions.length > 0">
-      <div class="card" style="padding:0;overflow:hidden">
-        <div class="sub-table">
-          <div class="sub-header">
-            <span class="col-id">#</span>
-            <span class="col-problem">题目</span>
-            <span class="col-lang">语言</span>
-            <span class="col-status">状态</span>
-            <span class="col-time">时间</span>
-            <span class="col-action"></span>
-          </div>
-          <div class="sub-row" v-for="item in submissions" :key="item.ID || item.id">
-            <span class="col-id">#{{ item.ID || item.id }}</span>
-            <span class="col-problem">
-              <router-link :to="`/problems/${item.ProblemID || item.problem_id}`">
-                {{ item.ProblemTitle || item.problem_title || `#${item.ProblemID || item.problem_id}` }}
-              </router-link>
-            </span>
-            <span class="col-lang">
-              <span class="lang-badge">{{ item.Language || item.language }}</span>
-            </span>
-            <span class="col-status">
-              <span class="status-indicator" :class="'indicator-' + (item.Status || item.status || 'Pending').toLowerCase()"></span>
-              <span :class="'status-' + (item.Status || item.status || 'Pending')">
-                {{ item.Status || item.status || 'Pending' }}
-              </span>
-            </span>
-            <span class="col-time">{{ formatTime(item.CreatedAt || item.created_at) }}</span>
-            <span class="col-action">
-              <router-link
-                :to="`/submissions/${item.ID || item.id}`"
-                class="btn btn-ghost btn-sm"
-              >
-                详情
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </router-link>
-            </span>
-          </div>
+  <div class="page">
+    <section class="page-hero page-title-block">
+      <span class="eyebrow">Submissions</span>
+      <div class="page-title">
+        <div>
+          <h1>我的提交</h1>
+          <p class="page-subtitle">这里对接 `/api/my-submissions`，展示当前登录用户的提交历史与状态。</p>
+        </div>
+        <div class="hero-mini">
+          <strong>{{ total }}</strong>
+          <span>条记录</span>
         </div>
       </div>
+    </section>
 
-      <div class="pagination" v-if="totalPages > 1">
-        <button :disabled="page <= 1" @click="goPage(page - 1)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          上一页
-        </button>
-        <button v-for="p in visiblePages" :key="p" :class="{ active: p === page }" @click="goPage(p)">{{ p }}</button>
-        <button :disabled="page >= totalPages" @click="goPage(page + 1)">
-          下一页
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-      </div>
+    <section v-if="loading" class="loading-state">
+      <strong>提交记录载入中</strong>
+      <span class="spinner spinner-dark"></span>
+    </section>
+
+    <template v-else>
+      <section v-if="filteredItems.length" class="stack">
+        <div class="glass-panel submissions-toolbar">
+          <div class="cluster">
+            <button
+              v-for="option in filters"
+              :key="option.value"
+              class="tag-pill"
+              :class="{ active: statusFilter === option.value }"
+              @click="statusFilter = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <span class="muted">第 {{ page }} / {{ totalPages }} 页</span>
+        </div>
+
+        <div class="submission-list">
+          <router-link
+            v-for="item in filteredItems"
+            :key="item.id"
+            :to="`/submissions/${item.id}`"
+            class="submission-card"
+          >
+            <div class="submission-main">
+              <div>
+                <span class="submission-id">#{{ item.id }}</span>
+                <h3>题目 #{{ item.problemId }}</h3>
+              </div>
+              <span class="status-pill" :class="statusClass(item.status)">{{ item.status }}</span>
+            </div>
+            <div class="submission-meta">
+              <span class="pill">{{ item.language.toUpperCase() }}</span>
+              <span>{{ formatTime(item.createdAt) }}</span>
+            </div>
+          </router-link>
+        </div>
+
+        <div v-if="totalPages > 1" class="pagination">
+          <button class="page-chip" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
+          <button
+            v-for="pageNumber in pagesToShow"
+            :key="pageNumber"
+            class="page-chip"
+            :class="{ active: pageNumber === page }"
+            @click="changePage(pageNumber)"
+          >
+            {{ pageNumber }}
+          </button>
+          <button class="page-chip" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
+        </div>
+      </section>
+
+      <section v-else class="empty-state">
+        <strong>你还没有提交记录</strong>
+        <span class="muted">从题库选一道题，提交第一份代码吧。</span>
+      </section>
     </template>
-
-    <div class="empty-state" v-else>
-      <span class="empty-icon">📭</span>
-      <p class="empty-text">还没有提交记录</p>
-      <p class="empty-hint">快去刷题，提交你的第一份代码吧！</p>
-      <router-link to="/" class="btn btn-primary" style="margin-top:16px">去刷题</router-link>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { getMySubmissions } from '../api/index.js'
+import { computed, onMounted, ref } from 'vue'
+import { getMySubmissions } from '../api'
 
-const submissions = ref([])
+const items = ref([])
 const total = ref(0)
 const page = ref(1)
-const limit = ref(20)
+const limit = ref(12)
 const loading = ref(true)
+const statusFilter = ref('ALL')
+
+const filters = [
+  { label: '全部', value: 'ALL' },
+  { label: 'AC', value: 'AC' },
+  { label: 'Pending', value: 'Pending' },
+  { label: 'WA', value: 'WA' },
+]
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
-const visiblePages = computed(() => {
-  const pages = []
-  const max = totalPages.value
+
+const pagesToShow = computed(() => {
+  const itemsToShow = []
   const start = Math.max(1, page.value - 2)
-  const end = Math.min(max, page.value + 2)
-  for (let i = start; i <= end; i++) pages.push(i)
-  return pages
+  const end = Math.min(totalPages.value, page.value + 2)
+
+  for (let index = start; index <= end; index += 1) {
+    itemsToShow.push(index)
+  }
+
+  return itemsToShow
 })
 
-function formatTime(t) {
-  if (!t) return '—'
-  return new Date(t).toLocaleString('zh-CN')
+const filteredItems = computed(() => {
+  if (statusFilter.value === 'ALL') {
+    return items.value
+  }
+
+  return items.value.filter((item) => item.status === statusFilter.value)
+})
+
+function statusClass(status) {
+  return `status-${status || 'Pending'}`
 }
 
-async function fetchSubmissions() {
+function formatTime(value) {
+  if (!value) {
+    return '时间未知'
+  }
+
+  return new Date(value).toLocaleString('zh-CN')
+}
+
+async function fetchItems() {
   loading.value = true
+
   try {
-    const res = await getMySubmissions({ page: page.value, limit: limit.value })
-    const data = res.data.data || res.data
-    submissions.value = data.items || []
-    total.value = data.total || 0
-  } catch (e) {
-    console.error('获取提交记录失败', e)
+    const data = await getMySubmissions({ page: page.value, limit: limit.value })
+    items.value = data.items
+    total.value = data.total
   } finally {
     loading.value = false
   }
 }
 
-function goPage(p) { page.value = p; fetchSubmissions(); }
+function changePage(nextPage) {
+  if (nextPage < 1 || nextPage > totalPages.value) {
+    return
+  }
 
-onMounted(fetchSubmissions)
+  page.value = nextPage
+  fetchItems()
+}
+
+onMounted(fetchItems)
 </script>
 
 <style scoped>
-.subtitle { color: var(--text-light); font-size: 14px; }
+.page-title-block {
+  padding: 24px 28px;
+}
 
-.sub-table { }
-.sub-header, .sub-row {
+.hero-mini {
   display: grid;
-  grid-template-columns: 70px 1fr 80px 110px 1fr 80px;
+  justify-items: end;
+  gap: 4px;
+}
+
+.hero-mini strong {
+  font-size: 34px;
+  letter-spacing: -0.05em;
+}
+
+.submissions-toolbar {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  padding: 14px 24px;
-  gap: 8px;
+  gap: 16px;
 }
-.sub-header {
+
+.submission-list {
+  display: grid;
+  gap: 16px;
+}
+
+.submission-card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.submission-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+
+.submission-main,
+.submission-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.submission-id {
+  display: inline-block;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-light);
-  border-bottom: 1px solid var(--border);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 800;
+  color: var(--brand-deep);
+  margin-bottom: 6px;
 }
-.sub-row {
-  border-bottom: 1px solid var(--border);
-  transition: all var(--transition);
+
+.submission-card h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.submission-meta {
+  color: var(--ink-soft);
   font-size: 14px;
 }
-.sub-row:last-child { border-bottom: none; }
-.sub-row:hover { background: #f8faff; }
-.col-id { color: var(--text-light); font-weight: 500; }
-.col-problem a { font-weight: 600; }
-.lang-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 5px;
-  background: #f1f5f9;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-.col-status { display: flex; align-items: center; gap: 6px; }
-.status-indicator {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.indicator-ac { background: var(--success); }
-.indicator-wa, .indicator-error { background: var(--danger); }
-.indicator-pending { background: var(--primary); animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
-.indicator-tle, .indicator-mle { background: #f59e0b; }
-.indicator-ce { background: #8b5cf6; }
-.col-time { font-size: 13px; color: var(--text-light); }
-.col-action { text-align: right; }
-.col-action .btn-ghost { font-size: 13px; }
-.col-action svg { width: 13px; height: 13px; }
 
-@media (max-width: 768px) {
-  .sub-header, .sub-row { grid-template-columns: 60px 1fr 80px 70px; }
-  .col-lang, .col-time { display: none; }
+.status-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: 800;
+  background: rgba(61, 115, 199, 0.14);
 }
+
+.status-pill.status-AC {
+  background: rgba(31, 143, 99, 0.14);
+}
+
+.status-pill.status-WA,
+.status-pill.status-RE {
+  background: rgba(187, 77, 58, 0.14);
+}
+
 @media (max-width: 640px) {
-  .sub-header, .sub-row { padding: 12px 16px; grid-template-columns: 50px 1fr 60px; }
-  .col-lang, .col-time { display: none; }
-  .col-status { font-size: 12px; }
+  .submissions-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hero-mini {
+    justify-items: start;
+  }
 }
 </style>

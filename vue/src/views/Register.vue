@@ -1,95 +1,100 @@
 <template>
-  <div class="auth-page">
-    <div class="auth-bg-shapes">
-      <div class="auth-shape auth-shape-1"></div>
-      <div class="auth-shape auth-shape-2"></div>
-    </div>
-    <div class="auth-card">
-      <div class="auth-header">
-        <router-link to="/" class="auth-logo">⚡ GoJo</router-link>
+  <div class="auth-shell">
+    <section class="auth-story register-story">
+      <span class="eyebrow">Register</span>
+      <h1>把这个小 demo，注册成一次完整的链路演示。</h1>
+      <p>
+        注册成功后，你就能真实走完“登录 → 刷题 → 提交 → 判题 → 查看结果”的全流程。对练习联调和面试演示都很有帮助。
+      </p>
+      <div class="auth-points">
+        <div class="auth-point">
+          <strong>Queue</strong>
+          <span>代码提交后进入 Redis 判题队列</span>
+        </div>
+        <div class="auth-point">
+          <strong>Sandbox</strong>
+          <span>Docker 沙箱执行后端判题逻辑</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card auth-card">
+      <div class="section-title">
         <h2>创建账号</h2>
-        <p>加入 GoJo，开启你的编程之旅</p>
       </div>
 
-      <form @submit.prevent="handleRegister" class="auth-form">
-        <div class="form-group">
+      <form class="stack" @submit.prevent="handleSubmit">
+        <div class="field">
           <label for="username">用户名</label>
-          <div class="input-wrapper">
-            <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <input id="username" v-model="form.username" class="input" placeholder="请设置用户名" required />
-          </div>
+          <input id="username" v-model.trim="form.username" class="input" required />
         </div>
-        <div class="form-group">
+
+        <div class="field">
           <label for="password">密码</label>
-          <div class="input-wrapper">
-            <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <input id="password" v-model="form.password" class="input" type="password" placeholder="请设置密码（至少6位）" required minlength="6" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="confirm">确认密码</label>
-          <div class="input-wrapper">
-            <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><line x1="12" y1="15" x2="12" y2="15.01"/></svg>
-            <input id="confirm" v-model="confirmPassword" class="input" type="password" placeholder="请再次输入密码" required />
-          </div>
+          <input id="password" v-model="form.password" class="input" type="password" minlength="6" required />
         </div>
 
-        <div class="error-msg" v-if="error">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          {{ error }}
-        </div>
-        <div class="success-msg" v-if="success">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          {{ success }}
+        <div class="field">
+          <label for="confirm-password">确认密码</label>
+          <input id="confirm-password" v-model="confirmPassword" class="input" type="password" minlength="6" required />
         </div>
 
-        <button type="submit" class="btn btn-primary auth-btn" :disabled="loading">
+        <div v-if="error" class="auth-message auth-error">{{ error }}</div>
+        <div v-if="success" class="auth-message auth-success">{{ success }}</div>
+
+        <button class="btn btn-primary btn-block" type="submit" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>
-            注册
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </span>
+          <span v-else>创建账号</span>
         </button>
       </form>
 
-      <div class="auth-footer">
-        已有账号？
-        <router-link to="/login">立即登录 →</router-link>
-      </div>
-    </div>
+      <p class="auth-footer">
+        已经注册过了？
+        <router-link to="/login">直接登录</router-link>
+      </p>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { register } from '../api/index.js'
+import { registerUser } from '../api'
 
 const router = useRouter()
-const form = reactive({ username: '', password: '' })
-const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
 const success = ref('')
+const confirmPassword = ref('')
+const form = reactive({
+  username: '',
+  password: '',
+})
 
-async function handleRegister() {
+async function handleSubmit() {
   error.value = ''
   success.value = ''
+
   if (form.password !== confirmPassword.value) {
-    error.value = '两次输入的密码不一致'
+    error.value = '两次输入的密码不一致。'
     return
   }
+
   if (form.password.length < 6) {
-    error.value = '密码长度至少6位'
+    error.value = '密码长度至少需要 6 位。'
     return
   }
+
   loading.value = true
+
   try {
-    await register(form)
-    success.value = '注册成功！即将跳转到登录页...'
-    setTimeout(() => router.push('/login'), 1500)
-  } catch (err) {
-    error.value = err.response?.data?.error || '注册失败，该用户名可能已存在'
+    await registerUser(form)
+    success.value = '注册成功，正在带你去登录页。'
+    setTimeout(() => {
+      router.push('/login')
+    }, 900)
+  } catch (requestError) {
+    error.value = requestError.response?.data?.error || '注册失败，可能用户名已存在。'
   } finally {
     loading.value = false
   }
@@ -97,116 +102,95 @@ async function handleRegister() {
 </script>
 
 <style scoped>
-.auth-page {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: calc(100vh - 160px);
-  position: relative;
-  padding: 20px;
+.auth-shell {
+  display: grid;
+  grid-template-columns: 1.1fr minmax(320px, 430px);
+  gap: 28px;
+  align-items: stretch;
+  min-height: calc(100vh - 220px);
 }
-.auth-bg-shapes {
-  position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0;
+
+.auth-story {
+  padding: 34px;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(145deg, rgba(20, 33, 61, 0.92), rgba(29, 122, 116, 0.88)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
+  color: #f6f5f2;
+  box-shadow: var(--shadow-lg);
 }
-.auth-shape {
-  position: absolute;
-  border-radius: 50%;
-  opacity: .06;
+
+.register-story {
+  background:
+    linear-gradient(145deg, rgba(29, 122, 116, 0.92), rgba(203, 109, 67, 0.88)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
 }
-.auth-shape-1 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, var(--primary), transparent);
-  top: -150px; right: -100px;
+
+.auth-story h1 {
+  margin: 18px 0 12px;
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
 }
-.auth-shape-2 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, var(--accent), transparent);
-  bottom: -100px; left: -80px;
+
+.auth-story p {
+  max-width: 560px;
+  color: rgba(246, 245, 242, 0.84);
+  font-size: 16px;
+}
+
+.auth-points {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.auth-point {
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.auth-point strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 20px;
 }
 
 .auth-card {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 420px;
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  padding: 44px 36px;
-  box-shadow: var(--shadow-xl);
-  animation: cardFloat 0.5s ease;
-}
-@keyframes cardFloat {
-  from { opacity: 0; transform: translateY(20px) scale(.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.auth-logo {
-  display: inline-block;
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--text) !important;
-  margin-bottom: 20px;
-}
-.auth-header { text-align: center; margin-bottom: 32px; }
-.auth-header h2 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
-.auth-header p { color: var(--text-secondary); font-size: 14px; }
-
-.auth-form { display: flex; flex-direction: column; gap: 18px; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-
-.input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.input-wrapper .input { padding-left: 40px; }
-.input-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--text-light);
-  pointer-events: none;
-  flex-shrink: 0;
+  align-self: center;
 }
 
-.auth-btn {
-  width: 100%;
-  padding: 13px;
-  font-size: 15px;
-  margin-top: 4px;
-  border-radius: 12px;
+.auth-message {
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 700;
 }
-.auth-btn svg { transition: transform var(--transition); }
-.auth-btn:hover:not(:disabled) svg { transform: translateX(4px); }
 
-.error-msg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.auth-error {
+  background: rgba(187, 77, 58, 0.12);
   color: var(--danger);
-  font-size: 13px;
-  background: #fef2f2;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid #fecaca;
 }
-.success-msg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+
+.auth-success {
+  background: rgba(31, 143, 99, 0.12);
   color: var(--success);
-  font-size: 13px;
-  background: #f0fdf4;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid #bbf7d0;
 }
-.error-msg svg, .success-msg svg { flex-shrink: 0; }
 
 .auth-footer {
-  text-align: center;
-  margin-top: 24px;
-  font-size: 14px;
-  color: var(--text-secondary);
+  margin: 20px 0 0;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 860px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .auth-story {
+    padding: 24px;
+  }
 }
 </style>

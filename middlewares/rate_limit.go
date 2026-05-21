@@ -22,7 +22,7 @@ func SubmitRateLimit() gin.HandlerFunc {
 
 		// 2. 拼接他在 Redis 里的专属门牌号
 		// 比如: rate_limit:submit:127.0.0.1
-		redisKey := fmt.Sprintf("rate_limit:submit:%s", userID)
+		redisKey := fmt.Sprintf("rate_limit:submit:%d", userID.(uint))
 
 		// 3. 核心魔法：向 Redis 请求自增 1 (原子操作)
 		// 如果 key 不存在，Redis 会自动创建并设为 1

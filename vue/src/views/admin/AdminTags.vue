@@ -1,170 +1,152 @@
 <template>
-  <div class="admin-tags-page">
-    <div class="page-header">
-      <h1>标签管理</h1>
-      <router-link to="/admin/problems" class="btn btn-ghost btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        题目管理
-      </router-link>
-    </div>
-
-    <!-- 新建标签 -->
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-title">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        创建新标签
-      </div>
-      <form @submit.prevent="handleCreate" class="tag-form">
-        <div class="input-wrapper">
-          <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-          <input v-model="newTagName" class="input" placeholder="输入标签名称，如：动态规划" required />
-        </div>
-        <button type="submit" class="btn btn-primary" :disabled="creating || !newTagName.trim()">
-          <span v-if="creating" class="spinner"></span>
-          <template v-else>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            创建
-          </template>
-        </button>
-      </form>
-      <div class="error-msg" v-if="createError">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        {{ createError }}
-      </div>
-    </div>
-
-    <!-- 标签列表 -->
-    <div class="loading-center" v-if="loading">
-      <div class="spinner spinner-dark" style="width:32px;height:32px;border-width:3px"></div>
-    </div>
-
-    <template v-else-if="tags.length > 0">
-      <div class="card" style="padding:0;overflow:hidden">
-        <div class="tags-grid">
-          <div class="tag-row" v-for="tag in tags" :key="tag.ID || tag.id">
-            <div class="tag-left">
-              <span class="tag-icon">🏷️</span>
-              <span class="tag-name">{{ tag.Name || tag.name }}</span>
-            </div>
-            <button class="btn btn-danger btn-sm" @click="handleDelete(tag)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              删除
-            </button>
+  <div class="page">
+    <section class="page-hero admin-hero">
+      <div>
+        <span class="eyebrow">Admin Tags</span>
+        <div class="page-title">
+          <div>
+            <h1>标签管理</h1>
+            <p class="page-subtitle">新建和删除标签均对接管理员接口，前台标签展示则继续走公共 `/api/tags`。</p>
           </div>
         </div>
       </div>
-    </template>
+      <router-link to="/admin/problems" class="btn btn-outline">返回题目管理</router-link>
+    </section>
 
-    <div class="empty-state" v-else>
-      <span class="empty-icon">🏷️</span>
-      <p class="empty-text">暂无标签</p>
-      <p class="empty-hint">在上方输入框创建第一个标签吧</p>
-    </div>
+    <section class="card stack">
+      <div class="section-title">
+        <h2>创建标签</h2>
+      </div>
+      <form class="cluster tag-form" @submit.prevent="createTag">
+        <input v-model.trim="name" class="input" placeholder="例如：动态规划 / 二分 / 图论" required />
+        <button class="btn btn-primary" :disabled="creating" type="submit">
+          <span v-if="creating" class="spinner"></span>
+          <span v-else>创建</span>
+        </button>
+      </form>
+      <div v-if="message" class="auth-message" :class="messageType === 'error' ? 'auth-error' : 'auth-success'">
+        {{ message }}
+      </div>
+    </section>
+
+    <section v-if="loading" class="loading-state">
+      <strong>标签列表加载中</strong>
+      <span class="spinner spinner-dark"></span>
+    </section>
+
+    <section v-else-if="tags.length" class="tag-grid">
+      <article v-for="tag in tags" :key="tag.id" class="tag-card">
+        <div>
+          <strong>{{ tag.name }}</strong>
+          <p>Tag ID #{{ tag.id }}</p>
+        </div>
+        <button class="btn btn-danger btn-sm" @click="removeTag(tag.id)">删除</button>
+      </article>
+    </section>
+
+    <section v-else class="empty-state">
+      <strong>还没有标签</strong>
+      <span class="muted">先创建一个标签，再回到题目编辑页看看联动效果。</span>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getTags, adminCreateTag, adminDeleteTag } from '../../api/index.js'
+import { onMounted, ref } from 'vue'
+import { adminCreateTag, adminDeleteTag, getTags } from '../../api'
 
-const tags = ref([])
-const newTagName = ref('')
 const loading = ref(true)
 const creating = ref(false)
-const createError = ref('')
+const tags = ref([])
+const name = ref('')
+const message = ref('')
+const messageType = ref('success')
 
 async function fetchTags() {
   loading.value = true
+
   try {
-    const res = await getTags()
-    tags.value = res.data.data || res.data || []
-  } catch (e) { console.error(e) }
-  finally { loading.value = false }
+    tags.value = await getTags()
+  } finally {
+    loading.value = false
+  }
 }
 
-async function handleCreate() {
-  createError.value = ''
+async function createTag() {
   creating.value = true
+  message.value = ''
+
   try {
-    await adminCreateTag({ name: newTagName.value })
-    newTagName.value = ''
-    fetchTags()
-  } catch (e) {
-    createError.value = e.response?.data?.error || '创建失败，标签可能已存在'
+    await adminCreateTag({ name: name.value })
+    name.value = ''
+    message.value = '标签创建成功。'
+    messageType.value = 'success'
+    await fetchTags()
+  } catch (requestError) {
+    message.value = requestError.response?.data?.error || '标签创建失败。'
+    messageType.value = 'error'
   } finally {
     creating.value = false
   }
 }
 
-async function handleDelete(tag) {
-  if (!confirm(`确定删除标签「${tag.Name || tag.name}」吗？`)) return
-  try {
-    await adminDeleteTag(tag.ID || tag.id)
-    fetchTags()
-  } catch (e) { alert('删除失败') }
+async function removeTag(tagId) {
+  await adminDeleteTag(tagId)
+  await fetchTags()
 }
 
 onMounted(fetchTags)
 </script>
 
 <style scoped>
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 16px;
-}
-.card-title svg { color: var(--primary); flex-shrink: 0; }
-
-.tag-form {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.tag-form .input-wrapper {
-  position: relative;
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-.tag-form .input-wrapper .input { padding-left: 40px; }
-.input-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--text-light);
-  pointer-events: none;
-  flex-shrink: 0;
-}
-
-.tags-grid { }
-.tag-row {
+.admin-hero {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  transition: all var(--transition);
+  align-items: end;
+  gap: 18px;
+  padding: 28px;
 }
-.tag-row:last-child { border-bottom: none; }
-.tag-row:hover { background: #f8faff; }
-.tag-left { display: flex; align-items: center; gap: 10px; }
-.tag-icon { font-size: 16px; }
-.tag-name { font-weight: 600; font-size: 15px; }
-.tag-row .btn-danger {
-  opacity: 0;
-  transition: opacity var(--transition);
-}
-.tag-row:hover .btn-danger { opacity: 1; }
 
-.error-msg {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--danger);
-  font-size: 13px;
-  margin-top: 12px;
+.tag-form {
+  align-items: stretch;
 }
-.error-msg svg { flex-shrink: 0; }
+
+.tag-form .input {
+  flex: 1;
+  min-width: 240px;
+}
+
+.tag-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.tag-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: var(--shadow-sm);
+}
+
+.tag-card strong {
+  font-size: 18px;
+}
+
+.tag-card p {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 820px) {
+  .admin-hero {
+    flex-direction: column;
+    align-items: start;
+  }
+}
 </style>

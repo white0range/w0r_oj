@@ -22,3 +22,6 @@ config/config.yaml
 # Docker 产生的数据卷目录（千万别把几 GB 的 MySQL 数据传上去了）
 redis_data/
 mysql_data/
+
+.gocache
+vue/dist/

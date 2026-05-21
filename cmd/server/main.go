@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"gojo/internal/app"
+	"gojo/pkg/ai"
 	"log"
 
 	// 🔌 1. 引入基础设施 (按你的旧包名)
@@ -73,7 +74,8 @@ func main() {
 
 	// 2. 造 Submission (依赖仓管和 AI。如果你还没写好 AIProvider 结构体，可以先传 nil)
 	// var aiProvider subSvc.AIProvider = nil
-	submissionService := subSvc.NewSubmissionService(subR, nil)
+	aiProvider := ai.NewAIProvider()
+	submissionService := subSvc.NewSubmissionService(subR, aiProvider)
 
 	// 3. 造 User (依赖 Submission 作为外交官提供 AC 列表)
 	userService := userSvc.NewUserService(ur, submissionService)
