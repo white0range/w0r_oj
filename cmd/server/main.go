@@ -103,7 +103,7 @@ func main() {
 	// 👷 第四阶段：安排后台包工头 (Worker)
 	// ==========================================
 	jw := judgeWorker.NewJudgeWorker(judgeService)
-	jw.StartWorkerPool(3) // 启动 3 个并发工人，死盯队列
+	jw.StartWorkerPool(config.GlobalConfig.Judge.WorkerCount) // 启动 3 个并发工人，死盯队列
 
 	// ==========================================
 	// 🚪 第五阶段：安排前台迎宾门卫 (Handlers)
@@ -122,7 +122,10 @@ func main() {
 	r := app.SetupRouter(uHandler, pHandler, sHandler, lHandler, tHandler, tcHandler, searchHandler)
 
 	fmt.Println("✅ 装配流水线完毕！服务器监听在 :8080 端口")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("❌ 服务器启动失败: %v", err)
+	// 从配置里读取端口
+	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)
+
+	if err := r.Run(addr); err != nil {
+		log.Fatalf("server start failed: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	model2 "gojo/internal/submission/model"
 	model5 "gojo/internal/user/model"
 	"log"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -21,7 +22,7 @@ var DB *gorm.DB
 func InitDB() {
 	// 1. 准备连接字符串 (这里为了演示顺畅，我们先写在代码里。
 	// 等项目跑通了，我们再把它抽离到 .yaml 配置文件里去)
-	dsn := config.AppConfig.SQL.Dsn
+	dsn := config.GlobalConfig.SQL.Dsn
 
 	// 2. 尝试连接数据库
 	var err error
@@ -32,6 +33,16 @@ func InitDB() {
 	}
 
 	fmt.Println("MySQL 数据库连接成功！万能钥匙已就绪。")
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Fatal("get sql db failed: ", err)
+	}
+
+	// 配置连接池参数
+	sqlDB.SetMaxOpenConns(config.GlobalConfig.SQL.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(config.GlobalConfig.SQL.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(config.GlobalConfig.SQL.ConnMaxLifetimeSeconds) * time.Second)
 
 	// 3. 自动迁移（AutoMigrate）：把 Go 的结构体翻译成 MySQL 的建表语句
 	// 把咱们刚刚建好的 User 图纸传进去

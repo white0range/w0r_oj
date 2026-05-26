@@ -18,9 +18,9 @@ var Ctx = context.Background()
 // InitRedis 负责连接启动 Redis
 func InitRedis() {
 	Rdb = redis.NewClient(&redis.Options{
-		Addr:     config.AppConfig.Redis.Addr,
-		Password: config.AppConfig.Redis.Password,
-		DB:       config.AppConfig.Redis.DB,
+		Addr:     config.GlobalConfig.Redis.Addr,
+		Password: config.GlobalConfig.Redis.Password,
+		DB:       config.GlobalConfig.Redis.DB,
 	})
 
 	// 测试一下连通性 (发送 PING 看看有没有 PONG)

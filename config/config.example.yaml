@@ -1,6 +1,20 @@
-# config/config.example.yaml (这个文件要推到 GitHub 上)
+# Copy this file to config.dev.yaml / config.test.yaml / config.prod.yaml
+# and fill in the values for the target environment.
+
+app:
+  env: dev
+
+server:
+  port: 8080
+  read_timeout_seconds: 10
+  write_timeout_seconds: 10
+  idle_timeout_seconds: 60
+
 sql:
   dsn: ""
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime_seconds: 3600
 
 redis:
   addr: "localhost:6379"
@@ -12,3 +26,13 @@ jwt:
 
 ai:
   api_key: ""
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  timeout_seconds: 30
+
+elasticsearch:
+  addresses:
+    - "http://localhost:9200"
+
+judge:
+  worker_count: 3

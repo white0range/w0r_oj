@@ -1,6 +1,7 @@
 package search
 
 import (
+	"gojo/config"
 	"log"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -13,9 +14,10 @@ var EsClient *elasticsearch.Client
 func InitElasticsearch() {
 	// 极其清爽的配置，因为我们在 Docker 里关了密码验证
 	cfg := elasticsearch.Config{
-		Addresses: []string{
-			"http://localhost:9200", // ES 的默认地址
-		},
+		//Addresses: []string{
+		//	"http://localhost:9200", // ES 的默认地址
+		//},
+		Addresses: config.GlobalConfig.Elasticsearch.Addresses,
 	}
 
 	client, err := elasticsearch.NewClient(cfg)

@@ -18,13 +18,13 @@ func NewAIProvider() *AIProvider {
 // 注意返回值：我们不再返回拼接好的 string，而是直接把 openai 的“水龙头 (Stream)”返回出去！
 func (p *AIProvider) AskAIStream(ctx context.Context, code string, language string, actualOutput string) (*openai.ChatCompletionStream, error) {
 	// 1. 替换为你的真实 API Key
-	apiKey := config.AppConfig.AI.APIKey
+	apiKey := config.GlobalConfig.AI.APIKey
 
 	// 2. 极其关键：把默认的 OpenAI 网址改成 DeepSeek 的网址
-	config := openai.DefaultConfig(apiKey)
-	config.BaseURL = "https://api.deepseek.com" // 注意：各个平台可能后缀不同，通常是这个或加上 /v1
-
-	client := openai.NewClientWithConfig(config)
+	clientconfig := openai.DefaultConfig(apiKey)
+	//clientconfig.BaseURL = "https://api.deepseek.com" // 注意：各个平台可能后缀不同，通常是这个或加上 /v1
+	clientconfig.BaseURL = config.GlobalConfig.AI.BaseURL
+	client := openai.NewClientWithConfig(clientconfig)
 
 	// 3. 注入灵魂：System Prompt (系统提示词)
 	systemPrompt := `你是一个极其严厉但富有耐心的顶级算法竞赛导师。
@@ -42,7 +42,7 @@ func (p *AIProvider) AskAIStream(ctx context.Context, code string, language stri
 	// 5. 发起网络请求
 	req := openai.ChatCompletionRequest{
 		//Model: "deepseek-chat", // 使用的模型名字 (注意查看 DeepSeek 文档最新的模型名)
-		Model: "deepseek-chat",
+		Model: config.GlobalConfig.AI.Model,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 			{Role: openai.ChatMessageRoleUser, Content: userPrompt},

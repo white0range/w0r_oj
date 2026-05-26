@@ -1,13 +1,13 @@
 package app
 
 import (
+	middlewares2 "gojo/internal/app/middlewares"
 	"net/http"
 
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	problemHandler "gojo/internal/problem/handler"
 	subHandler "gojo/internal/submission/handler"
 	userHandler "gojo/internal/user/handler"
-	"gojo/middlewares"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,7 +41,7 @@ func SetupRouter(
 	r.GET("/api/problems/:id", pHandler.GetProblemDetail)
 
 	r.GET("/api/tags", tHandler.GetTagList)
-	r.GET("/api/leaderboard", middlewares.OptionalAuth(), lHandler.GetGlobalLeaderboard)
+	r.GET("/api/leaderboard", middlewares2.OptionalAuth(), lHandler.GetGlobalLeaderboard)
 
 	r.POST("/api/problems/search", searchHandler.SearchProblems)
 
@@ -49,13 +49,13 @@ func SetupRouter(
 	// 核心区域：必须通过安检 (使用中间件)
 	// ====================
 	protected := r.Group("/api")
-	protected.Use(middlewares.AuthMiddleware())
+	protected.Use(middlewares2.AuthMiddleware())
 	{
 		// ==========================================
 		// 👑 皇家禁地：管理员专属操作台
 		// ==========================================
 		adminGroup := protected.Group("/admin")
-		adminGroup.Use(middlewares.AdminCheck())
+		adminGroup.Use(middlewares2.AdminCheck())
 		{
 			adminGroup.POST("/problems", pHandler.CreateProblem)
 			adminGroup.PUT("/problems/:id", pHandler.UpdateProblem)
@@ -72,12 +72,12 @@ func SetupRouter(
 
 		protected.GET("/profile", uHandler.GetProfile)
 
-		protected.POST("/submit", middlewares.SubmitRateLimit(), sHandler.SubmitCode)
+		protected.POST("/submit", middlewares2.SubmitRateLimit(), sHandler.SubmitCode)
 		protected.GET("/submissions/:id", sHandler.GetSubmissionResult)
 		protected.GET("/my-submissions", sHandler.GetMySubmissions)
 
 		protected.GET("/ws", uHandler.ConnectWS)
-		protected.GET("/submissions/:id/ai-help", middlewares.AIRateLimit(), sHandler.GetAIAssistance)
+		protected.GET("/submissions/:id/ai-help", middlewares2.AIRateLimit(), sHandler.GetAIAssistance)
 	}
 
 	return r
