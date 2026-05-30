@@ -1,11 +1,13 @@
 package app
 
 import (
+	analysisHandler "gojo/internal/analysis/handler"
 	middlewares2 "gojo/internal/app/middlewares"
 	"net/http"
 
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	problemHandler "gojo/internal/problem/handler"
+	studyPlanHandler "gojo/internal/study_plan/handler"
 	subHandler "gojo/internal/submission/handler"
 	userHandler "gojo/internal/user/handler"
 
@@ -21,6 +23,8 @@ func SetupRouter(
 	tHandler *problemHandler.TagHandler,
 	tcHandler *problemHandler.TestCaseHandler,
 	searchHandler *problemHandler.SearchHandler,
+	analysisHandler *analysisHandler.AnalysisHandler,
+	spHandler *studyPlanHandler.StudyPlanHandler,
 ) *gin.Engine {
 	r := gin.Default()
 
@@ -68,6 +72,14 @@ func SetupRouter(
 			adminGroup.POST("/tags", tHandler.CreateTag)
 			adminGroup.DELETE("/tags/:id", tHandler.DeleteTag)
 			adminGroup.PUT("/problems/:id/tags", pHandler.UpdateProblemTags)
+			adminGroup.GET("/analysis/stats", analysisHandler.GetAdminStats)
+			adminGroup.GET("/study-plan/stats", spHandler.GetAdminStats)
+
+			adminGroup.GET("/agent/users/:id/ac-history", spHandler.GetUserACHistory)
+			adminGroup.GET("/agent/users/:id/failed-submissions", spHandler.GetUserFailedSubmissions)
+			adminGroup.GET("/agent/users/:id/tag-stats", spHandler.GetUserTagStats)
+			adminGroup.GET("/agent/problems/candidates", spHandler.GetCandidateProblems)
+			adminGroup.GET("/agent/problems/:id", spHandler.GetProblemDetail)
 		}
 
 		protected.GET("/profile", uHandler.GetProfile)
@@ -78,6 +90,16 @@ func SetupRouter(
 
 		protected.GET("/ws", uHandler.ConnectWS)
 		protected.GET("/submissions/:id/ai-help", middlewares2.AIRateLimit(), sHandler.GetAIAssistance)
+
+		// AI 诊断任务
+		protected.POST("/analysis/tasks", analysisHandler.CreateAnalysisTask)
+		protected.GET("/analysis/tasks/:id", analysisHandler.GetAnalysisTask)
+		protected.POST("/analysis/tasks/:id/feedback", analysisHandler.SubmitFeedback)
+		protected.GET("/analysis/tasks/:id/feedback", analysisHandler.GetFeedback)
+		protected.POST("/study-plan/tasks", spHandler.CreateTask)
+		protected.GET("/study-plan/tasks/:id", spHandler.GetTask)
+		protected.POST("/study-plan/tasks/:id/feedback", spHandler.SubmitFeedback)
+		protected.GET("/study-plan/tasks/:id/feedback", spHandler.GetFeedback)
 	}
 
 	return r

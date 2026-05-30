@@ -26,3 +26,7 @@ mysql_data/
 # local cache / build artifacts
 .gocache
 vue/dist/
+
+# local environment variables
+.env
+!.env.example

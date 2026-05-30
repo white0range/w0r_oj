@@ -1,0 +1,75 @@
+[
+  {
+    "problem_id": 2,
+    "document": "Title: A+B 究极版\nTags: dp, 回文\nDescription: 请输入两个数，输出它们的和。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 4\nAccepted Count: 2",
+    "metadata": {
+      "title": "A+B 究极版",
+      "tags": [
+        "dp",
+        "回文"
+      ],
+      "submit_count": 4,
+      "accepted_count": 2,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 3,
+    "document": "Title: 有序数组查找\nTags: 数组, 二分\nDescription: 给定一个按升序排列的整数数组 nums 和一个目标值 target，请你返回 target 在数组中的下标。如果目标值不存在，输出 -1。要求时间复杂度尽量优于线性扫描。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "有序数组查找",
+      "tags": [
+        "数组",
+        "二分"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 4,
+    "document": "Title: 最小可行值\nTags: 二分\nDescription: 给定若干木棍长度和一个整数 k，请你将木棍切分成若干段，使得每段长度相同，并且总段数至少为 k。请输出能够满足条件的最大段长。如果无法切出 k 段，则输出 0。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "最小可行值",
+      "tags": [
+        "二分"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 5,
+    "document": "Title: 回文分割次数\nTags: dp, 回文\nDescription: 给定一个字符串 s，你可以将其切分成若干子串，要求每个子串都是回文串。请输出最少需要切分多少次。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "回文分割次数",
+      "tags": [
+        "dp",
+        "回文"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 6,
+    "document": "Title: 爬楼梯方案数\nTags: dp\nDescription: 一共有 n 级台阶，你每次可以爬 1 级或 2 级。请计算爬到第 n 级一共有多少种不同的方法。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "爬楼梯方案数",
+      "tags": [
+        "dp"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  }
+]

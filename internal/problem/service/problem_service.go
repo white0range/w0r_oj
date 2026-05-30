@@ -1,12 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"gojo/config"
 	"gojo/infrastructure/cache"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/model"
@@ -16,6 +21,10 @@ import (
 type ProblemService struct {
 	repo       repository.ProblemRepository
 	searchRepo repository.ProblemSearchRepository
+}
+
+type ragProblemSyncRequest struct {
+	ProblemID uint `json:"problem_id"`
 }
 
 func NewProblemService(r repository.ProblemRepository, sr repository.ProblemSearchRepository) *ProblemService {
@@ -81,6 +90,7 @@ func (s *ProblemService) CreateProblem(ctx context.Context, req dto.ProblemReque
 	}
 
 	s.clearProblemListCache(ctx, "create")
+	s.syncProblemToRAG(ctx, problem.ID)
 	return &problem, nil
 }
 
@@ -230,6 +240,7 @@ func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, re
 
 	s.clearProblemDetailCache(ctx, problemID, "update")
 	s.clearProblemListCache(ctx, "update")
+	s.syncProblemToRAGByStringID(ctx, problemID)
 	return nil
 }
 
@@ -240,6 +251,7 @@ func (s *ProblemService) DeleteProblem(ctx context.Context, problemID string) er
 
 	s.clearProblemDetailCache(ctx, problemID, "delete")
 	s.clearProblemListCache(ctx, "delete")
+	s.deleteProblemFromRAG(ctx, problemID)
 	return nil
 }
 
@@ -250,6 +262,7 @@ func (s *ProblemService) UpdateProblemTags(ctx context.Context, problemID string
 
 	s.clearProblemDetailCache(ctx, problemID, "update tags")
 	s.clearProblemListCache(ctx, "update tags")
+	s.syncProblemToRAGByStringID(ctx, problemID)
 	return nil
 }
 
@@ -295,5 +308,75 @@ func (s *ProblemService) SyncAllProblemsToES(ctx context.Context) error {
 	}
 
 	fmt.Printf("elasticsearch sync finished, succeeded: %d\n", successCount)
+	return nil
+}
+
+func (s *ProblemService) syncProblemToRAGByStringID(ctx context.Context, problemID string) {
+	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
+	if err != nil {
+		log.Printf("skip rag sync because problem id is invalid: %q err=%v", problemID, err)
+		return
+	}
+
+	s.syncProblemToRAG(ctx, uint(id))
+}
+
+func (s *ProblemService) syncProblemToRAG(ctx context.Context, problemID uint) {
+	if err := s.callRAGSyncEndpoint(ctx, "/rag/problems/sync", problemID); err != nil {
+		log.Printf("sync problem %d to qdrant failed: %v", problemID, err)
+	}
+}
+
+func (s *ProblemService) deleteProblemFromRAG(ctx context.Context, problemID string) {
+	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
+	if err != nil {
+		log.Printf("skip rag delete because problem id is invalid: %q err=%v", problemID, err)
+		return
+	}
+
+	if err := s.callRAGSyncEndpoint(ctx, "/rag/problems/delete", uint(id)); err != nil {
+		log.Printf("delete problem %d from qdrant failed: %v", id, err)
+	}
+}
+
+func (s *ProblemService) callRAGSyncEndpoint(ctx context.Context, path string, problemID uint) error {
+	agentBaseURL := strings.TrimRight(config.GlobalConfig.StudyPlan.AgentBaseURL, "/")
+	if agentBaseURL == "" {
+		agentBaseURL = "http://localhost:8000"
+	}
+
+	bodyBytes, err := json.Marshal(ragProblemSyncRequest{ProblemID: problemID})
+	if err != nil {
+		return fmt.Errorf("marshal rag sync request failed: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		agentBaseURL+path,
+		bytes.NewReader(bodyBytes),
+	)
+	if err != nil {
+		return fmt.Errorf("create rag sync request failed: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer problem-sync-service")
+
+	timeoutSeconds := config.GlobalConfig.StudyPlan.AgentTimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 60
+	}
+
+	resp, err := (&http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("do rag sync request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("rag sync returned status=%d", resp.StatusCode)
+	}
+
 	return nil
 }

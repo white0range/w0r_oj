@@ -14,6 +14,8 @@ type SubmissionRepository interface {
 	PushToJudgeQueue(ctx context.Context, taskBytes []byte) error
 	GetSubmissionByID(ctx context.Context, id string) (*model.Submission, error)
 	GetSubmissionsByUserID(ctx context.Context, userID uint, page, limit int) (int64, []model.Submission, error)
+	GetAllSubmissionsByUserID(ctx context.Context, userID uint) ([]model.Submission, error)
+	GetRecentFailedSubmissionsByUserID(ctx context.Context, userID uint, limit int) ([]model.Submission, error)
 	UpdateSubmissionStatus(ctx context.Context, id uint, status string) error
 
 	// 🚨 新增：专门获取用户 AC 过的所有题目 ID
@@ -63,6 +65,33 @@ func (r *submissionRepoMysql) GetSubmissionsByUserID(ctx context.Context, userID
 		Find(&items).Error
 
 	return total, items, err
+}
+
+func (r *submissionRepoMysql) GetAllSubmissionsByUserID(ctx context.Context, userID uint) ([]model.Submission, error) {
+	var items []model.Submission
+
+	err := mysql.DB.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at desc").
+		Find(&items).Error
+
+	return items, err
+}
+
+func (r *submissionRepoMysql) GetRecentFailedSubmissionsByUserID(ctx context.Context, userID uint, limit int) ([]model.Submission, error) {
+	var items []model.Submission
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	err := mysql.DB.WithContext(ctx).
+		Where("user_id = ? AND status <> ?", userID, "AC").
+		Order("created_at desc").
+		Limit(limit).
+		Find(&items).Error
+
+	return items, err
 }
 
 // 2. 落地实现

@@ -1,0 +1,17 @@
+log_level: INFO
+
+storage:
+  storage_path: ./storage
+  snapshots_path: ./snapshots
+  temp_path: null
+  on_disk_payload: true
+
+service:
+  host: 0.0.0.0
+  http_port: 6333
+  grpc_port: 6334
+  enable_cors: true
+  enable_tls: false
+  max_request_size_mb: 32
+
+telemetry_disabled: true

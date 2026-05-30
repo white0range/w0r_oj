@@ -36,3 +36,8 @@ elasticsearch:
 
 judge:
   worker_count: 3
+
+study_plan:
+  worker_count: 3
+  agent_base_url: "http://localhost:8000"
+  agent_timeout_seconds: 60

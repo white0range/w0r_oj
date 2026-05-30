@@ -3,9 +3,11 @@ package mysql
 import (
 	"fmt"
 	"gojo/config"
-	"gojo/internal/problem/model"
-	model2 "gojo/internal/submission/model"
-	model5 "gojo/internal/user/model"
+	analysisModel "gojo/internal/analysis/model"
+	problemModel "gojo/internal/problem/model"
+	studyPlanModel "gojo/internal/study_plan/model"
+	submissionModel "gojo/internal/submission/model"
+	userModel "gojo/internal/user/model"
 	"log"
 	"time"
 
@@ -48,11 +50,15 @@ func InitDB() {
 	// 把咱们刚刚建好的 User 图纸传进去
 	// 把它修改成这样，让 GORM 一次性把所有表都建好：
 	err = DB.AutoMigrate(
-		&model5.User{},
-		&model.Problem{}, // 新增：把题目图纸交给包工头
-		&model2.Submission{},
-		&model.TestCase{},
-		&model.Tag{},
+		&userModel.User{},
+		&problemModel.Problem{}, // 新增：把题目图纸交给包工头
+		&submissionModel.Submission{},
+		&problemModel.TestCase{},
+		&problemModel.Tag{},
+		&analysisModel.AnalysisTask{},
+		&analysisModel.AnalysisFeedback{},
+		&studyPlanModel.StudyPlanTask{},
+		&studyPlanModel.StudyPlanFeedback{},
 	)
 	if err != nil {
 		log.Fatal("建表失败: ", err)
