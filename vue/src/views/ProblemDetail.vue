@@ -12,7 +12,7 @@
           <div class="page-title">
             <div>
               <h1>{{ problem.title }}</h1>
-              <p class="page-subtitle">详情页直接使用 `/api/problems/:id`，提交区对接 `/api/submit` 和 `/api/ws`。</p>
+              <p class="page-subtitle">题目详情来自 `/api/problems/:id`，右侧提交区对接 `/api/submit` 与 `/api/ws`。</p>
             </div>
           </div>
           <div class="cluster">
@@ -43,7 +43,7 @@
 
           <div v-if="!store.isLoggedIn" class="empty-state compact">
             <strong>登录后才能提交</strong>
-            <span class="muted">你的后端要求提交接口必须通过 JWT 鉴权。</span>
+            <span class="muted">提交接口需要 JWT 鉴权。登录后即可体验完整判题链路。</span>
             <router-link to="/login" class="btn btn-primary">去登录</router-link>
           </div>
 
@@ -119,22 +119,17 @@ let socket = null
 let pollTimer = null
 
 const placeholderByLanguage = {
-  go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello GoJo")\n}',
-  python: 'print("Hello GoJo")',
-  java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello GoJo");\n    }\n}',
-  cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello GoJo" << endl;\n    return 0;\n}',
+  go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello Gojo")\n}',
+  python: 'print("Hello Gojo")',
+  java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello Gojo");\n    }\n}',
+  cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello Gojo" << endl;\n    return 0;\n}',
 }
 
 const renderedDescription = computed(() => {
   const text = problem.value?.description || ''
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-  return escaped
-    .replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>')
-    .replace(/\n/g, '<br>')
+  return escaped.replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>').replace(/\n/g, '<br>')
 })
 
 async function fetchProblem() {
@@ -175,7 +170,7 @@ async function refreshSubmission() {
       submitState.value = {
         kind: submission.status === 'AC' ? 'success' : 'warning',
         title: `判题完成：${submission.status}`,
-        message: submission.actualOutput || '可以点击下面的详情按钮查看完整结果。',
+        message: submission.actualOutput || '可以点击下方按钮查看完整提交结果。',
         submissionId: submission.id,
       }
       stopPolling()
@@ -246,19 +241,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.detail-hero {
-  padding: 28px;
-}
-
 .detail-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 1.08fr 0.92fr;
 }
 
 .description-body {
   font-size: 15px;
-  color: var(--ink);
 }
 
 .description-body :deep(pre) {
@@ -266,7 +256,7 @@ onUnmounted(() => {
   padding: 16px;
   overflow: auto;
   border-radius: 18px;
-  background: #18243d;
+  background: var(--surface-dark);
   color: #f2f6ff;
 }
 
@@ -275,14 +265,14 @@ onUnmounted(() => {
 }
 
 .code-editor {
-  min-height: 320px;
-  background: #18243d;
+  min-height: 340px;
+  background: var(--surface-dark);
   color: #f2f6ff;
   border-color: rgba(255, 255, 255, 0.08);
 }
 
 .code-editor:focus {
-  background: #1b2946;
+  background: #162947;
 }
 
 .submit-feedback {
@@ -304,11 +294,11 @@ onUnmounted(() => {
 }
 
 .submit-feedback.pending {
-  background: rgba(61, 115, 199, 0.12);
+  background: rgba(60, 116, 198, 0.12);
 }
 
 .submit-feedback.success {
-  background: rgba(31, 143, 99, 0.12);
+  background: rgba(31, 141, 96, 0.12);
 }
 
 .submit-feedback.warning,

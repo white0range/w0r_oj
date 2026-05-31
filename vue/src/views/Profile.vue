@@ -6,7 +6,7 @@
         <div class="page-title">
           <div>
             <h1>{{ profile?.username || store.username || '开发者' }}</h1>
-            <p class="page-subtitle">个人中心直接适配 `/api/profile`，同时把角色信息同步回前端状态，保证管理员入口和路由守卫一致。</p>
+            <p class="page-subtitle">个人中心直接对接 `/api/profile`，同步用户角色和已解题状态，为前端路由守卫和后台入口提供依据。</p>
           </div>
         </div>
       </div>
@@ -79,7 +79,7 @@
         <div>
           <span class="eyebrow">Admin Console</span>
           <h2>管理员工作区</h2>
-          <p>这里把后台入口放在显眼位置，方便你演示管理员题目管理、标签管理和新建题目的全流程。</p>
+          <p>这里汇总了题目管理、标签管理和新建题目入口，方便你直接演示后台能力以及前后端协作流程。</p>
         </div>
         <div class="cluster">
           <router-link to="/admin/problems" class="btn btn-outline">题目管理</router-link>
@@ -91,7 +91,7 @@
 
     <section v-else class="empty-state">
       <strong>没有拿到个人信息</strong>
-      <span class="muted">可以重新登录一次看看。</span>
+      <span class="muted">可以重新登录一次再看看。</span>
     </section>
   </div>
 </template>
@@ -128,7 +128,6 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 18px;
   align-items: center;
-  padding: 26px 28px;
 }
 
 .profile-badge-panel {
@@ -147,8 +146,8 @@ onMounted(async () => {
   background: linear-gradient(135deg, var(--brand), var(--brand-deep));
   color: #fff9f5;
   font-size: 34px;
-  font-weight: 800;
-  box-shadow: 0 20px 34px rgba(143, 61, 34, 0.22);
+  font-weight: 700;
+  box-shadow: 0 20px 34px rgba(153, 57, 28, 0.22);
 }
 
 .profile-grid {
@@ -181,7 +180,7 @@ onMounted(async () => {
 }
 
 .solved-pill {
-  background: rgba(29, 122, 116, 0.12);
+  background: rgba(15, 139, 131, 0.12);
   color: var(--accent);
 }
 
@@ -190,8 +189,8 @@ onMounted(async () => {
   gap: 18px;
   padding: 28px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(203, 109, 67, 0.16), rgba(255, 255, 255, 0.72));
-  border: 1px solid rgba(203, 109, 67, 0.16);
+  background: linear-gradient(135deg, rgba(209, 98, 57, 0.16), rgba(255, 255, 255, 0.72));
+  border: 1px solid rgba(209, 98, 57, 0.16);
   box-shadow: var(--shadow-md);
 }
 

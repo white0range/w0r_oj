@@ -6,7 +6,7 @@
         <div class="page-title">
           <div>
             <h1>题目管理</h1>
-            <p class="page-subtitle">这里使用公开题目列表接口做管理视图展示，删除与新建则调用管理员专属接口。</p>
+            <p class="page-subtitle">这里使用公开题目列表接口做管理视图展示，新增、编辑和删除则调用管理员专属接口。</p>
           </div>
         </div>
       </div>
@@ -65,7 +65,7 @@
 
       <section v-else class="empty-state">
         <strong>还没有题目</strong>
-        <span class="muted">先新建一道题，再回来看看管理页效果。</span>
+        <span class="muted">先创建一道题，再回来看管理页效果。</span>
       </section>
 
       <div v-if="totalPages > 1" class="pagination">
@@ -87,7 +87,7 @@
       <div v-if="deletingTarget" class="dialog-backdrop" @click.self="deletingTarget = null">
         <div class="dialog-card">
           <h3>确认删除题目？</h3>
-          <p>题目「{{ deletingTarget.title }}」将被删除。这个提示文案和后端现在的真实行为保持一致，不夸大为“会删除所有提交记录”。</p>
+          <p>题目《{{ deletingTarget.title }}》将被删除。这里的提示与当前后端真实行为保持一致，不额外夸大连带删除范围。</p>
           <div class="cluster">
             <button class="btn btn-ghost" @click="deletingTarget = null">取消</button>
             <button class="btn btn-danger" :disabled="deleting" @click="confirmDelete">
@@ -178,7 +178,6 @@ onMounted(fetchProblems)
   justify-content: space-between;
   align-items: end;
   gap: 18px;
-  padding: 28px;
 }
 
 .admin-table {
@@ -201,8 +200,8 @@ onMounted(fetchProblems)
 
 .admin-head {
   font-size: 13px;
-  font-weight: 800;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--ink-faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -217,7 +216,7 @@ onMounted(fetchProblems)
   z-index: 40;
   display: grid;
   place-items: center;
-  background: rgba(20, 33, 61, 0.28);
+  background: rgba(19, 35, 63, 0.28);
   backdrop-filter: blur(10px);
 }
 
@@ -225,7 +224,7 @@ onMounted(fetchProblems)
   width: min(92vw, 460px);
   padding: 24px;
   border-radius: 28px;
-  background: #fffdf9;
+  background: #fffdfa;
   box-shadow: var(--shadow-lg);
 }
 

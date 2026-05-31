@@ -60,7 +60,7 @@ func main() {
 	judgeService := judgeSvc.NewJudgeService(jr)
 
 	aiProvider := ai.NewAIProvider()
-	submissionService := subSvc.NewSubmissionService(subR, aiProvider)
+	submissionService := subSvc.NewSubmissionService(subR)
 	userService := userSvc.NewUserService(ur, submissionService)
 	problemService := problemSvc.NewProblemService(pr, sr)
 	tagService := problemSvc.NewTagService(problemRepo.NewTagRepository())

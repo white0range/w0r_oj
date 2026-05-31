@@ -120,60 +120,6 @@ export async function getMySubmissions(params = {}) {
   }
 }
 
-export async function streamAIHelp(id, handlers = {}) {
-  const token = localStorage.getItem('token')
-  const response = await fetch(`/api/submissions/${id}/ai-help`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-
-  const contentType = response.headers.get('content-type') || ''
-
-  if (!response.ok || !contentType.includes('text/event-stream')) {
-    const rawText = await response.text()
-
-    try {
-      const parsed = JSON.parse(rawText)
-      throw new Error(parsed.error || parsed.message || 'AI 功能暂时不可用')
-    } catch {
-      throw new Error(rawText || 'AI 功能暂时不可用')
-    }
-  }
-
-  const reader = response.body?.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullText = ''
-
-  if (!reader) {
-    return fullText
-  }
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
-    }
-
-    buffer += decoder.decode(value, { stream: true })
-    const segments = buffer.split('\n\n')
-    buffer = segments.pop() || ''
-
-    for (const segment of segments) {
-      for (const line of segment.split('\n')) {
-        if (line.startsWith('data:')) {
-          const text = line.slice(5).trimStart()
-          if (text) {
-            fullText += text
-            handlers.onChunk?.(text, fullText)
-          }
-        }
-      }
-    }
-  }
-
-  return fullText
-}
-
 export async function getLeaderboard() {
   const body = getBody(await api.get('/leaderboard'))
   const data = unwrapData(body)

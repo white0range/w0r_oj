@@ -7,7 +7,7 @@
           <div>
             <h1>{{ isNew ? '新建题目' : `编辑题目 #${problemId}` }}</h1>
             <p class="page-subtitle">
-              新建会直接提交 `title / description / tag_ids / test_cases`；编辑则拆成基础信息、标签关联和测试用例增量添加，完全贴合你当前后端实现。
+              新建会直接提交 `title / description / tag_ids / test_cases`；编辑则拆成基础信息、标签关联和测试用例增量添加，对齐当前后端实现。
             </p>
           </div>
         </div>
@@ -66,7 +66,7 @@
 
         <div v-if="!form.test_cases.length" class="empty-state compact">
           <strong>暂时没有新增测试用例</strong>
-          <span class="muted">创建新题建议至少带一组测试用例，编辑现有题目则可以按需新增。</span>
+          <span class="muted">新建题目建议至少带一组测试用例；编辑已有题目时也可以按需追加。</span>
         </div>
 
         <div v-for="(testCase, index) in form.test_cases" :key="index" class="case-card">
@@ -178,10 +178,7 @@ async function loadProblem() {
     return
   }
 
-  const [detail, cases] = await Promise.all([
-    getProblemDetail(problemId.value),
-    adminGetTestCases(problemId.value),
-  ])
+  const [detail, cases] = await Promise.all([getProblemDetail(problemId.value), adminGetTestCases(problemId.value)])
 
   form.title = detail.title
   form.description = detail.description
@@ -250,7 +247,6 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: end;
   gap: 18px;
-  padding: 28px;
 }
 
 .form-grid {
@@ -286,7 +282,7 @@ onMounted(async () => {
   margin: 0;
   padding: 14px;
   border-radius: 18px;
-  background: #17243d;
+  background: var(--surface-dark);
   color: #eef4ff;
   overflow: auto;
   white-space: pre-wrap;

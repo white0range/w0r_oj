@@ -2,18 +2,18 @@
   <div class="auth-shell">
     <section class="auth-story">
       <span class="eyebrow">Login</span>
-      <h1>回到你的判题台。</h1>
+      <h1>回到你的判题工作台。</h1>
       <p>
-        这里的登录状态会直接接上你的 JWT 后端鉴权。登录后即可查看个人中心、提交记录和管理员后台入口。
+        登录后，前端会直接接入现有 JWT 鉴权链，解锁个人中心、我的提交和管理员后台入口。
       </p>
       <div class="auth-points">
         <div class="auth-point">
-          <strong>JWT</strong>
-          <span>登录成功后自动解析角色与用户名</span>
+          <strong>JWT Session</strong>
+          <span>登录成功后自动解析用户身份与角色信息。</span>
         </div>
         <div class="auth-point">
-          <strong>Admin</strong>
-          <span>管理员账号会显示后台入口与独立路由守卫</span>
+          <strong>Role Aware</strong>
+          <span>管理员账号会自动显示后台入口并通过路由守卫保护页面。</span>
         </div>
       </div>
     </section>
@@ -38,7 +38,7 @@
 
         <button class="btn btn-primary btn-block" type="submit" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>登录并进入工作台</span>
+          <span v-else>登录并进入系统</span>
         </button>
       </form>
 
@@ -94,9 +94,9 @@ async function handleSubmit() {
   padding: 34px;
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(145deg, rgba(20, 33, 61, 0.92), rgba(29, 122, 116, 0.88)),
+    linear-gradient(145deg, rgba(17, 32, 58, 0.95), rgba(15, 139, 131, 0.88)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
-  color: #f6f5f2;
+  color: #f7f4ef;
   box-shadow: var(--shadow-lg);
 }
 
@@ -109,7 +109,7 @@ async function handleSubmit() {
 
 .auth-story p {
   max-width: 560px;
-  color: rgba(246, 245, 242, 0.82);
+  color: rgba(247, 244, 239, 0.82);
   font-size: 16px;
 }
 
@@ -133,18 +133,6 @@ async function handleSubmit() {
 
 .auth-card {
   align-self: center;
-}
-
-.auth-message {
-  padding: 12px 14px;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.auth-error {
-  background: rgba(187, 77, 58, 0.12);
-  color: var(--danger);
 }
 
 .auth-footer {

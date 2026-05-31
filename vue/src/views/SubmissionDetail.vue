@@ -12,9 +12,7 @@
           <div class="page-title">
             <div>
               <h1>{{ submission.status }}</h1>
-              <p class="page-subtitle">
-                详情页直接使用 `/api/submissions/:id`，如果状态还是 `Pending` 会自动轮询刷新。
-              </p>
+              <p class="page-subtitle">详情页直接使用 `/api/submissions/:id`。如果状态还是 `Pending`，页面会自动轮询刷新。</p>
             </div>
           </div>
           <div class="cluster">
@@ -39,23 +37,6 @@
             <h2>运行输出</h2>
           </div>
           <pre class="output-view mono">{{ submission.actualOutput || '当前没有输出信息。' }}</pre>
-
-          <template v-if="showAI">
-            <div class="field">
-              <label>AI 诊断</label>
-              <p class="helper-text">这里会直接消费后端的 SSE 流式接口。</p>
-            </div>
-            <div class="cluster">
-              <button class="btn btn-primary" :disabled="aiLoading" @click="askAI">
-                <span v-if="aiLoading" class="spinner"></span>
-                <span v-else>让 AI 分析这次提交</span>
-              </button>
-              <button v-if="aiText" class="btn btn-outline" @click="aiText = ''">清空结果</button>
-            </div>
-            <div v-if="aiText || aiLoading" class="ai-box">
-              <pre class="mono">{{ aiText || 'AI 正在思考中...' }}</pre>
-            </div>
-          </template>
         </article>
       </section>
     </template>
@@ -70,20 +51,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getSubmission, streamAIHelp } from '../api'
+import { getSubmission } from '../api'
 
 const route = useRoute()
 const routeId = computed(() => route.params.id)
 const loading = ref(true)
 const submission = ref(null)
-const aiLoading = ref(false)
-const aiText = ref('')
 let pollTimer = null
-
-const showAI = computed(() => {
-  const status = submission.value?.status
-  return status && status !== 'AC' && status !== 'Pending'
-})
 
 async function fetchSubmission() {
   try {
@@ -92,23 +66,6 @@ async function fetchSubmission() {
     submission.value = null
   } finally {
     loading.value = false
-  }
-}
-
-async function askAI() {
-  aiLoading.value = true
-  aiText.value = ''
-
-  try {
-    await streamAIHelp(routeId.value, {
-      onChunk(_, fullText) {
-        aiText.value = fullText
-      },
-    })
-  } catch (requestError) {
-    aiText.value = requestError.message || 'AI 暂时不可用。'
-  } finally {
-    aiLoading.value = false
   }
 }
 
@@ -139,7 +96,6 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: start;
   gap: 16px;
-  padding: 28px;
 }
 
 .detail-grid {
@@ -149,12 +105,11 @@ onUnmounted(() => {
 }
 
 .code-view,
-.output-view,
-.ai-box pre {
+.output-view {
   margin: 0;
   padding: 18px;
   border-radius: 20px;
-  background: #18243d;
+  background: var(--surface-dark);
   color: #eef4ff;
   overflow: auto;
   white-space: pre-wrap;
@@ -162,13 +117,8 @@ onUnmounted(() => {
 }
 
 .output-view {
-  background: #10192b;
+  background: #0e1a30;
   color: #d5e3ff;
-}
-
-.ai-box {
-  border-radius: 22px;
-  background: rgba(20, 33, 61, 0.05);
 }
 
 @media (max-width: 900px) {

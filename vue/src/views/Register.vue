@@ -2,18 +2,18 @@
   <div class="auth-shell">
     <section class="auth-story register-story">
       <span class="eyebrow">Register</span>
-      <h1>把这个小 demo，注册成一次完整的链路演示。</h1>
+      <h1>把这个 OJ，真正跑成一条完整的学习链路。</h1>
       <p>
-        注册成功后，你就能真实走完“登录 → 刷题 → 提交 → 判题 → 查看结果”的全流程。对练习联调和面试演示都很有帮助。
+        注册成功后，你就可以体验“登录 → 刷题 → 提交 → 判题 → 查看结果”的完整流程，也能更真实地联调后面的分析和训练规划能力。
       </p>
       <div class="auth-points">
         <div class="auth-point">
           <strong>Queue</strong>
-          <span>代码提交后进入 Redis 判题队列</span>
+          <span>提交后进入 Redis 判题队列，再由 worker 异步处理。</span>
         </div>
         <div class="auth-point">
           <strong>Sandbox</strong>
-          <span>Docker 沙箱执行后端判题逻辑</span>
+          <span>判题依赖 Docker 沙箱执行代码，是整条 OJ 流程的核心一环。</span>
         </div>
       </div>
     </section>
@@ -89,7 +89,7 @@ async function handleSubmit() {
 
   try {
     await registerUser(form)
-    success.value = '注册成功，正在带你去登录页。'
+    success.value = '注册成功，正在带你跳转到登录页。'
     setTimeout(() => {
       router.push('/login')
     }, 900)
@@ -114,15 +114,15 @@ async function handleSubmit() {
   padding: 34px;
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(145deg, rgba(20, 33, 61, 0.92), rgba(29, 122, 116, 0.88)),
+    linear-gradient(145deg, rgba(17, 32, 58, 0.95), rgba(15, 139, 131, 0.88)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
-  color: #f6f5f2;
+  color: #f7f4ef;
   box-shadow: var(--shadow-lg);
 }
 
 .register-story {
   background:
-    linear-gradient(145deg, rgba(29, 122, 116, 0.92), rgba(203, 109, 67, 0.88)),
+    linear-gradient(145deg, rgba(15, 139, 131, 0.95), rgba(209, 98, 57, 0.86)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
 }
 
@@ -135,7 +135,7 @@ async function handleSubmit() {
 
 .auth-story p {
   max-width: 560px;
-  color: rgba(246, 245, 242, 0.84);
+  color: rgba(247, 244, 239, 0.84);
   font-size: 16px;
 }
 
@@ -159,23 +159,6 @@ async function handleSubmit() {
 
 .auth-card {
   align-self: center;
-}
-
-.auth-message {
-  padding: 12px 14px;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.auth-error {
-  background: rgba(187, 77, 58, 0.12);
-  color: var(--danger);
-}
-
-.auth-success {
-  background: rgba(31, 143, 99, 0.12);
-  color: var(--success);
 }
 
 .auth-footer {

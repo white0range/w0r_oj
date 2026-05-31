@@ -6,20 +6,20 @@
         <div class="page-title">
           <div>
             <h1>排行榜</h1>
-            <p class="page-subtitle">这里严格对接 `/api/leaderboard`，支持游客查看榜单，登录用户查看自己的排名。</p>
+            <p class="page-subtitle">这里直接对接 `/api/leaderboard`，支持游客查看榜单，登录用户查看自己的实时排名与分数。</p>
           </div>
         </div>
       </div>
       <div class="hero-rank">
         <strong v-if="store.isLoggedIn && myRank > 0">你的当前排名：第 {{ myRank }} 名</strong>
-        <strong v-else-if="store.isLoggedIn">你还没有上榜，去刷题吧。</strong>
+        <strong v-else-if="store.isLoggedIn">你还没有上榜，先去刷几题吧。</strong>
         <strong v-else>登录后可查看你的专属排名。</strong>
         <span v-if="store.isLoggedIn">积分：{{ myScore }}</span>
       </div>
     </section>
 
     <section v-if="loading" class="loading-state">
-      <strong>排行榜载入中</strong>
+      <strong>排行榜加载中</strong>
       <span class="spinner spinner-dark"></span>
     </section>
 
@@ -62,7 +62,7 @@
 
       <section v-if="!top50.length" class="empty-state">
         <strong>暂时还没有榜单数据</strong>
-        <span class="muted">先去提交几次代码，让这个小型 OJ 真正动起来。</span>
+        <span class="muted">先去提交几次代码，让这个 OJ 真正动起来。</span>
       </section>
     </template>
   </div>
@@ -99,7 +99,6 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 18px;
   align-items: end;
-  padding: 28px;
 }
 
 .hero-rank {
@@ -136,20 +135,20 @@ onMounted(async () => {
 }
 
 .podium-card.rank-1 {
-  background: linear-gradient(135deg, rgba(203, 109, 67, 0.16), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(209, 98, 57, 0.16), rgba(255, 255, 255, 0.76));
 }
 
 .podium-card.rank-2 {
-  background: linear-gradient(135deg, rgba(61, 115, 199, 0.14), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(60, 116, 198, 0.14), rgba(255, 255, 255, 0.76));
 }
 
 .podium-card.rank-3 {
-  background: linear-gradient(135deg, rgba(29, 122, 116, 0.14), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(15, 139, 131, 0.14), rgba(255, 255, 255, 0.76));
 }
 
 .podium-rank {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--brand-deep);
 }
 
@@ -161,10 +160,10 @@ onMounted(async () => {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), #115c56);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   color: #f2fffd;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .board-table {
@@ -187,14 +186,14 @@ onMounted(async () => {
 
 .board-head {
   font-size: 13px;
-  font-weight: 800;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--ink-faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .board-row.current {
-  background: rgba(203, 109, 67, 0.08);
+  background: rgba(209, 98, 57, 0.08);
 }
 
 .user-col {
@@ -204,7 +203,7 @@ onMounted(async () => {
 }
 
 .score-col {
-  font-weight: 800;
+  font-weight: 700;
 }
 
 @media (max-width: 720px) {

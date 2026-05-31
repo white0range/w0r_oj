@@ -6,7 +6,7 @@
         <div class="page-title">
           <div>
             <h1>标签管理</h1>
-            <p class="page-subtitle">新建和删除标签均对接管理员接口，前台标签展示则继续走公共 `/api/tags`。</p>
+            <p class="page-subtitle">新建和删除标签都对接管理员接口，而前台标签展示继续走公开 `/api/tags`。</p>
           </div>
         </div>
       </div>
@@ -46,7 +46,7 @@
 
     <section v-else class="empty-state">
       <strong>还没有标签</strong>
-      <span class="muted">先创建一个标签，再回到题目编辑页看看联动效果。</span>
+      <span class="muted">先创建一个标签，再回到题目编辑页看联动效果。</span>
     </section>
   </div>
 </template>
@@ -104,7 +104,6 @@ onMounted(fetchTags)
   justify-content: space-between;
   align-items: end;
   gap: 18px;
-  padding: 28px;
 }
 
 .tag-form {

@@ -89,8 +89,6 @@ func SetupRouter(
 		protected.GET("/my-submissions", sHandler.GetMySubmissions)
 
 		protected.GET("/ws", uHandler.ConnectWS)
-		protected.GET("/submissions/:id/ai-help", middlewares2.AIRateLimit(), sHandler.GetAIAssistance)
-
 		// AI 诊断任务
 		protected.POST("/analysis/tasks", analysisHandler.CreateAnalysisTask)
 		protected.GET("/analysis/tasks/:id", analysisHandler.GetAnalysisTask)

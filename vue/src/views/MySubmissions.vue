@@ -5,7 +5,7 @@
       <div class="page-title">
         <div>
           <h1>我的提交</h1>
-          <p class="page-subtitle">这里对接 `/api/my-submissions`，展示当前登录用户的提交历史与状态。</p>
+          <p class="page-subtitle">这里对接 `/api/my-submissions`，展示当前登录用户的提交历史、状态和查看入口。</p>
         </div>
         <div class="hero-mini">
           <strong>{{ total }}</strong>
@@ -26,7 +26,7 @@
             <button
               v-for="option in filters"
               :key="option.value"
-              class="tag-pill"
+              class="tag-toggle"
               :class="{ active: statusFilter === option.value }"
               @click="statusFilter = option.value"
             >
@@ -46,7 +46,7 @@
             <div class="submission-main">
               <div>
                 <span class="submission-id">#{{ item.id }}</span>
-                <h3>题目 #{{ item.problemId }}</h3>
+                <h3>{{ item.problemTitle || `题目 #${item.problemId}` }}</h3>
               </div>
               <span class="status-pill" :class="statusClass(item.status)">{{ item.status }}</span>
             </div>
@@ -74,7 +74,7 @@
 
       <section v-else class="empty-state">
         <strong>你还没有提交记录</strong>
-        <span class="muted">从题库选一道题，提交第一份代码吧。</span>
+        <span class="muted">从题库里选一道题，提交第一份代码吧。</span>
       </section>
     </template>
   </div>
@@ -212,7 +212,7 @@ onMounted(fetchItems)
 .submission-id {
   display: inline-block;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--brand-deep);
   margin-bottom: 6px;
 }
@@ -230,12 +230,12 @@ onMounted(fetchItems)
 .status-pill {
   padding: 8px 12px;
   border-radius: 999px;
-  font-weight: 800;
-  background: rgba(61, 115, 199, 0.14);
+  font-weight: 700;
+  background: rgba(60, 116, 198, 0.14);
 }
 
 .status-pill.status-AC {
-  background: rgba(31, 143, 99, 0.14);
+  background: rgba(31, 141, 96, 0.14);
 }
 
 .status-pill.status-WA,

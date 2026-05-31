@@ -5,25 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sashabaranov/go-openai"
-
 	"gojo/internal/app/apperror"
 	"gojo/internal/submission/dto"
 	"gojo/internal/submission/model"
 	"gojo/internal/submission/repository"
 )
 
-type AIProvider interface {
-	AskAIStream(ctx context.Context, code, lang, output string) (*openai.ChatCompletionStream, error)
-}
-
 type SubmissionService struct {
-	repo       repository.SubmissionRepository
-	aiProvider AIProvider
+	repo repository.SubmissionRepository
 }
 
-func NewSubmissionService(r repository.SubmissionRepository, ai AIProvider) *SubmissionService {
-	return &SubmissionService{repo: r, aiProvider: ai}
+func NewSubmissionService(r repository.SubmissionRepository) *SubmissionService {
+	return &SubmissionService{repo: r}
 }
 
 func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto.SubmitRequest) (*model.Submission, error) {
@@ -93,28 +86,6 @@ func (s *SubmissionService) GetMySubmissions(ctx context.Context, userID uint, p
 		Total: total,
 		Items: items,
 	}, nil
-}
-
-func (s *SubmissionService) GetAIAssistanceStream(ctx context.Context, submissionID string, userID uint) (*openai.ChatCompletionStream, error) {
-	submission, err := s.repo.GetSubmissionByID(ctx, submissionID)
-	if err != nil {
-		return nil, apperror.ErrSubmissionNotFound
-	}
-
-	if submission.UserID != userID {
-		return nil, apperror.ErrForbidden
-	}
-
-	if submission.Status == "AC" {
-		return nil, apperror.ErrAlreadyAccepted
-	}
-
-	stream, err := s.aiProvider.AskAIStream(ctx, submission.Code, submission.Language, submission.ActualOutput)
-	if err != nil {
-		return nil, apperror.ErrAIConnectFailed
-	}
-
-	return stream, nil
 }
 
 func (s *SubmissionService) GetACProblemIDsByUserID(ctx context.Context, userID uint) ([]uint, error) {

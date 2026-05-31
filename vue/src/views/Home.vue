@@ -2,20 +2,20 @@
   <div class="page">
     <section class="page-hero hero-grid">
       <div class="hero-copy">
-        <span class="eyebrow">Go Backend Demo · OJ Frontend</span>
+        <span class="eyebrow">Go Backend · Vue Frontend · AI Workflow</span>
         <div class="page-title">
           <div>
-            <h1>让你的 Go 判题后端，有一套真正像作品集的前端门面。</h1>
+            <h1>把一个 OJ，做成能学习、能诊断、也能继续成长的工程项目。</h1>
             <p class="page-subtitle">
-              题库、排行榜、提交链路、管理员后台都围绕你的后端接口重写，页面更精致，也更容易讲给面试官听。
+              题库、提交、排行榜、后台管理之外，这个项目还串起了异步判题、错误分析、训练规划、RAG 检索和文本记忆，让它更像一个完整的学习系统。
             </p>
           </div>
         </div>
         <div class="cluster hero-actions">
-          <router-link v-if="!store.isLoggedIn" to="/register" class="btn btn-primary">创建账号</router-link>
-          <router-link v-if="!store.isLoggedIn" to="/login" class="btn btn-outline">已有账号，去登录</router-link>
-          <router-link v-if="store.isLoggedIn" to="/profile" class="btn btn-primary">进入个人中心</router-link>
+          <router-link to="/" class="btn btn-primary">开始刷题</router-link>
           <router-link to="/leaderboard" class="btn btn-secondary">查看排行榜</router-link>
+          <router-link v-if="store.isLoggedIn" to="/profile" class="btn btn-outline">进入个人中心</router-link>
+          <router-link v-else to="/register" class="btn btn-outline">创建账号</router-link>
         </div>
       </div>
 
@@ -23,11 +23,11 @@
         <div class="metric-grid">
           <article class="metric-card">
             <span class="metric-value">{{ total }}</span>
-            <span class="metric-label">后端可用题目总数</span>
+            <span class="metric-label">题目总数</span>
           </article>
           <article class="metric-card">
             <span class="metric-value">{{ tags.length }}</span>
-            <span class="metric-label">已挂载标签</span>
+            <span class="metric-label">标签数量</span>
           </article>
           <article class="metric-card">
             <span class="metric-value">{{ visibleProblems.length }}</span>
@@ -35,16 +35,9 @@
           </article>
         </div>
 
-        <div v-if="store.isAdmin" class="admin-spotlight">
-          <div>
-            <strong>管理员快捷入口</strong>
-            <p>你的后端已经区分了管理员路由，这里保留显眼入口，方便演示题目、标签和测试用例管理。</p>
-          </div>
-          <div class="cluster">
-            <router-link to="/admin/problems" class="btn btn-outline btn-sm">题目管理</router-link>
-            <router-link to="/admin/problems/new" class="btn btn-primary btn-sm">新建题目</router-link>
-            <router-link to="/admin/tags" class="btn btn-secondary btn-sm">标签管理</router-link>
-          </div>
+        <div class="hero-note">
+          <strong>当前前端直接对接现有 Go 接口</strong>
+          <p>首页以 `/api/problems` 和 `/api/tags` 为中心，保留业务真实性，同时把视觉、层次和可读性统一成一套更完整的界面系统。</p>
         </div>
       </div>
     </section>
@@ -57,27 +50,21 @@
             id="problem-search"
             v-model.trim="searchTerm"
             class="input"
-            placeholder="按题目标题或 ID 过滤当前页"
+            placeholder="按题目标题或题号过滤当前页"
           />
         </div>
         <div class="toolbar-summary">
           <strong>{{ total }}</strong>
-          <span>道题目 · 第 {{ page }} / {{ totalPages }} 页</span>
+          <span>题目 · 第 {{ page }} / {{ totalPages }} 页</span>
         </div>
       </div>
 
       <div class="cluster">
-        <button
-          class="tag-pill"
-          :class="{ active: !selectedTagId }"
-          @click="applyTag(null)"
-        >
-          全部题目
-        </button>
+        <button class="tag-toggle" :class="{ active: !selectedTagId }" @click="applyTag(null)">全部题目</button>
         <button
           v-for="tag in tags"
           :key="tag.id"
-          class="tag-pill"
+          class="tag-toggle"
           :class="{ active: selectedTagId === tag.id }"
           @click="applyTag(tag.id)"
         >
@@ -89,7 +76,7 @@
     <section class="stack">
       <div class="section-title">
         <h2>题目列表</h2>
-        <span class="muted">与 `/api/problems` 和 `/api/tags` 接口精确对齐</span>
+        <span class="muted">点击卡片进入详情页并提交代码</span>
       </div>
 
       <div v-if="loading" class="loading-state">
@@ -126,7 +113,7 @@
 
       <div v-else class="empty-state">
         <strong>这一页暂时没有符合条件的题目</strong>
-        <span class="muted">可以切换标签，或者清空筛选条件重新看看。</span>
+        <span class="muted">可以切换标签，或者清空筛选条件再看看。</span>
       </div>
 
       <div v-if="totalPages > 1" class="pagination">
@@ -181,9 +168,7 @@ const visibleProblems = computed(() => {
   }
 
   const keyword = searchTerm.value.toLowerCase()
-  return problems.value.filter((problem) => {
-    return problem.title.toLowerCase().includes(keyword) || String(problem.id).includes(keyword)
-  })
+  return problems.value.filter((problem) => problem.title.toLowerCase().includes(keyword) || String(problem.id).includes(keyword))
 })
 
 async function fetchProblems() {
@@ -231,8 +216,7 @@ onMounted(async () => {
 .hero-grid {
   display: grid;
   gap: 24px;
-  padding: 34px;
-  grid-template-columns: 1.35fr 1fr;
+  grid-template-columns: 1.3fr 1fr;
 }
 
 .hero-copy {
@@ -241,24 +225,18 @@ onMounted(async () => {
   gap: 18px;
 }
 
-.hero-actions {
-  margin-top: 8px;
+.hero-side {
+  align-content: start;
 }
 
-.admin-spotlight {
-  display: grid;
-  gap: 14px;
+.hero-note {
   padding: 22px;
-  border-radius: 28px;
-  background: linear-gradient(135deg, rgba(203, 109, 67, 0.12), rgba(255, 255, 255, 0.6));
-  border: 1px solid rgba(203, 109, 67, 0.16);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(19, 35, 63, 0.08);
+  background: linear-gradient(135deg, rgba(209, 98, 57, 0.12), rgba(255, 255, 255, 0.62));
 }
 
-.admin-spotlight strong {
-  font-size: 18px;
-}
-
-.admin-spotlight p {
+.hero-note p {
   margin: 8px 0 0;
   color: var(--ink-soft);
 }
@@ -288,24 +266,6 @@ onMounted(async () => {
   letter-spacing: -0.05em;
 }
 
-.tag-pill {
-  padding: 10px 15px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.66);
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-weight: 700;
-  transition: all var(--transition);
-}
-
-.tag-pill.active,
-.tag-pill:hover {
-  background: linear-gradient(135deg, var(--accent), #115c56);
-  border-color: transparent;
-  color: #f4fffd;
-}
-
 .problem-grid {
   display: grid;
   gap: 18px;
@@ -325,7 +285,7 @@ onMounted(async () => {
 
 .problem-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(203, 109, 67, 0.24);
+  border-color: rgba(209, 98, 57, 0.24);
   box-shadow: var(--shadow-md);
 }
 
@@ -346,7 +306,7 @@ onMounted(async () => {
 
 .problem-index {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--brand-deep);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -364,7 +324,6 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .hero-grid {
     grid-template-columns: 1fr;
-    padding: 24px;
   }
 
   .toolbar-summary {

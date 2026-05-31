@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -114,52 +113,4 @@ func (h *SubmissionHandler) GetMySubmissions(c *gin.Context) {
 	}
 
 	response.OK(c, res)
-}
-
-func (h *SubmissionHandler) GetAIAssistance(c *gin.Context) {
-	submissionID := c.Param("id")
-
-	userIDRaw, exists := c.Get("userID")
-	if !exists {
-		response.FailWithMessage(c, http.StatusUnauthorized, ecode.Unauthorized, "missing current user")
-		return
-	}
-
-	userID, ok := userIDRaw.(uint)
-	if !ok {
-		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "invalid user identity")
-		return
-	}
-
-	stream, err := h.svc.GetAIAssistanceStream(c.Request.Context(), submissionID, userID)
-	if err != nil {
-		switch {
-		case errors.Is(err, apperror.ErrSubmissionNotFound):
-			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "submission not found")
-		case errors.Is(err, apperror.ErrForbidden):
-			response.FailWithMessage(c, http.StatusForbidden, ecode.Forbidden, "cannot access AI help for other users")
-		case errors.Is(err, apperror.ErrAlreadyAccepted):
-			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "accepted submissions do not need AI help")
-		case errors.Is(err, apperror.ErrAIConnectFailed):
-			response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "AI service unavailable")
-		default:
-			response.Fail(c, http.StatusInternalServerError, ecode.InternalError)
-		}
-		return
-	}
-	defer stream.Close()
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-
-	c.Stream(func(w io.Writer) bool {
-		resp, err := stream.Recv()
-		if err != nil {
-			return false
-		}
-
-		c.SSEvent("message", resp.Choices[0].Delta.Content)
-		return true
-	})
 }

@@ -17,18 +17,18 @@ const AdminProblemEdit = () => import('./views/admin/AdminProblemEdit.vue')
 const AdminTags = () => import('./views/admin/AdminTags.vue')
 
 const routes = [
-  { path: '/', name: 'home', component: Home, meta: { title: 'GoJo | 题库总览' } },
-  { path: '/login', name: 'login', component: Login, meta: { title: 'GoJo | 登录' } },
-  { path: '/register', name: 'register', component: Register, meta: { title: 'GoJo | 注册' } },
-  { path: '/problems/:id', name: 'problem-detail', component: ProblemDetail, meta: { title: 'GoJo | 题目详情' } },
-  { path: '/leaderboard', name: 'leaderboard', component: Leaderboard, meta: { title: 'GoJo | 排行榜' } },
-  { path: '/profile', name: 'profile', component: Profile, meta: { title: 'GoJo | 个人中心', auth: true } },
-  { path: '/my-submissions', name: 'my-submissions', component: MySubmissions, meta: { title: 'GoJo | 我的提交', auth: true } },
-  { path: '/submissions/:id', name: 'submission-detail', component: SubmissionDetail, meta: { title: 'GoJo | 提交详情', auth: true } },
-  { path: '/admin/problems', name: 'admin-problems', component: AdminProblems, meta: { title: 'GoJo | 题目管理', auth: true, admin: true } },
-  { path: '/admin/problems/new', name: 'admin-problem-new', component: AdminProblemEdit, meta: { title: 'GoJo | 新建题目', auth: true, admin: true } },
-  { path: '/admin/problems/:id/edit', name: 'admin-problem-edit', component: AdminProblemEdit, meta: { title: 'GoJo | 编辑题目', auth: true, admin: true } },
-  { path: '/admin/tags', name: 'admin-tags', component: AdminTags, meta: { title: 'GoJo | 标签管理', auth: true, admin: true } },
+  { path: '/', name: 'home', component: Home, meta: { title: 'Gojo OJ | 题库总览' } },
+  { path: '/login', name: 'login', component: Login, meta: { title: 'Gojo OJ | 登录' } },
+  { path: '/register', name: 'register', component: Register, meta: { title: 'Gojo OJ | 注册' } },
+  { path: '/problems/:id', name: 'problem-detail', component: ProblemDetail, meta: { title: 'Gojo OJ | 题目详情' } },
+  { path: '/leaderboard', name: 'leaderboard', component: Leaderboard, meta: { title: 'Gojo OJ | 排行榜' } },
+  { path: '/profile', name: 'profile', component: Profile, meta: { title: 'Gojo OJ | 个人中心', auth: true } },
+  { path: '/my-submissions', name: 'my-submissions', component: MySubmissions, meta: { title: 'Gojo OJ | 我的提交', auth: true } },
+  { path: '/submissions/:id', name: 'submission-detail', component: SubmissionDetail, meta: { title: 'Gojo OJ | 提交详情', auth: true } },
+  { path: '/admin/problems', name: 'admin-problems', component: AdminProblems, meta: { title: 'Gojo OJ | 题目管理', auth: true, admin: true } },
+  { path: '/admin/problems/new', name: 'admin-problem-new', component: AdminProblemEdit, meta: { title: 'Gojo OJ | 新建题目', auth: true, admin: true } },
+  { path: '/admin/problems/:id/edit', name: 'admin-problem-edit', component: AdminProblemEdit, meta: { title: 'Gojo OJ | 编辑题目', auth: true, admin: true } },
+  { path: '/admin/tags', name: 'admin-tags', component: AdminTags, meta: { title: 'Gojo OJ | 标签管理', auth: true, admin: true } },
 ]
 
 const router = createRouter({
@@ -40,7 +40,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  document.title = to.meta.title || 'GoJo'
+  document.title = to.meta.title || 'Gojo OJ'
 
   if (to.meta.auth && !store.isLoggedIn) {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`

@@ -2,17 +2,17 @@
   <header class="navbar">
     <div class="navbar-shell">
       <router-link to="/" class="brand">
-        <span class="brand-mark">GJ</span>
+        <span class="brand-mark">悟</span>
         <div class="brand-copy">
-          <strong>GoJo</strong>
-          <span>Online Judge Studio</span>
+          <strong>Gojo OJ</strong>
+          <span>Judge. Learn. Iterate.</span>
         </div>
       </router-link>
 
       <nav class="nav-links desktop-only">
         <router-link to="/" class="nav-link">题库</router-link>
         <router-link to="/leaderboard" class="nav-link">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">提交记录</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">我的提交</router-link>
         <router-link v-if="store.isAdmin" to="/admin/problems" class="nav-link nav-admin">管理后台</router-link>
       </nav>
 
@@ -31,7 +31,7 @@
         </template>
       </div>
 
-      <button class="mobile-toggle" @click="menuOpen = !menuOpen">
+      <button class="mobile-toggle" @click="menuOpen = !menuOpen" aria-label="Toggle navigation">
         <span></span>
         <span></span>
       </button>
@@ -41,7 +41,7 @@
       <div v-if="menuOpen" class="mobile-panel">
         <router-link to="/" class="mobile-link" @click="closeMenu">题库</router-link>
         <router-link to="/leaderboard" class="mobile-link" @click="closeMenu">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">提交记录</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">我的提交</router-link>
         <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">个人中心</router-link>
         <router-link v-if="store.isAdmin" to="/admin/problems" class="mobile-link" @click="closeMenu">管理后台</router-link>
         <div class="mobile-actions">
@@ -99,7 +99,7 @@ function logout() {
 .mobile-panel {
   width: min(100%, var(--container));
   margin: 0 auto;
-  border: 1px solid rgba(20, 33, 61, 0.1);
+  border: 1px solid rgba(19, 35, 63, 0.1);
   border-radius: 999px;
   background: rgba(255, 252, 247, 0.78);
   backdrop-filter: blur(18px);
@@ -118,21 +118,20 @@ function logout() {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: var(--ink);
 }
 
 .brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 16px;
   background: linear-gradient(135deg, var(--brand), var(--brand-deep));
-  color: #fff7f2;
-  font-size: 14px;
-  font-weight: 800;
-  box-shadow: 0 14px 24px rgba(143, 61, 34, 0.22);
+  color: #fff8f3;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 16px 26px rgba(153, 57, 28, 0.24);
 }
 
 .brand-copy {
@@ -140,13 +139,13 @@ function logout() {
 }
 
 .brand-copy strong {
-  font-size: 17px;
+  font-size: 18px;
   letter-spacing: -0.03em;
 }
 
 .brand-copy span {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-faint);
 }
 
 .nav-links,
@@ -167,7 +166,7 @@ function logout() {
 .nav-link.router-link-active,
 .nav-link:hover {
   color: var(--ink);
-  background: rgba(20, 33, 61, 0.06);
+  background: rgba(19, 35, 63, 0.06);
 }
 
 .nav-admin {
@@ -180,13 +179,13 @@ function logout() {
   gap: 10px;
   padding: 7px 10px 7px 8px;
   border-radius: 999px;
-  background: rgba(20, 33, 61, 0.06);
+  background: rgba(19, 35, 63, 0.06);
   color: var(--ink);
   font-weight: 700;
 }
 
 .profile-chip.admin {
-  background: rgba(203, 109, 67, 0.12);
+  background: rgba(209, 98, 57, 0.12);
 }
 
 .profile-avatar {
@@ -196,10 +195,10 @@ function logout() {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), #125b56);
-  color: #f0fffc;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: #f4fffd;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .mobile-toggle {
@@ -230,7 +229,6 @@ function logout() {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.55);
   font-weight: 700;
-  color: var(--ink);
 }
 
 .mobile-actions {
