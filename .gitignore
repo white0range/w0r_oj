@@ -26,6 +26,7 @@ mysql_data/
 # local cache / build artifacts
 .gocache
 vue/dist/
+agent/__pycache__/
 
 # local environment variables
 .env

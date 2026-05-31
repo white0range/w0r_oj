@@ -5,3 +5,5 @@ pydantic
 qdrant-client
 python-dotenv
 dashscope
+langchain
+langchain-deepseek
