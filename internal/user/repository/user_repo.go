@@ -13,6 +13,7 @@ type UserRepository interface {
 	GetUserByID(ctx context.Context, id uint) (*model.User, error)
 
 	GetUsersByIDs(ctx context.Context, ids []uint) ([]model.User, error)
+	GetTopUsersBySolvedCount(ctx context.Context, limit int) ([]model.User, error)
 }
 
 type userRepoMysql struct{}
@@ -54,6 +55,23 @@ func (r *userRepoMysql) GetUsersByIDs(ctx context.Context, ids []uint) ([]model.
 	err := mysql.DB.WithContext(ctx).
 		Select("id", "username").
 		Where("id IN ?", ids).
+		Find(&users).Error
+
+	return users, err
+}
+
+func (r *userRepoMysql) GetTopUsersBySolvedCount(ctx context.Context, limit int) ([]model.User, error) {
+	var users []model.User
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	err := mysql.DB.WithContext(ctx).
+		Select("id", "username", "solved_count").
+		Where("solved_count > 0").
+		Order("solved_count desc, id asc").
+		Limit(limit).
 		Find(&users).Error
 
 	return users, err

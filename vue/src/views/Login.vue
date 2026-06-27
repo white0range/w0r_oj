@@ -1,19 +1,20 @@
 <template>
   <div class="auth-shell">
     <section class="auth-story">
-      <span class="eyebrow">Login</span>
+      <span class="eyebrow">Access Portal</span>
       <h1>回到你的判题工作台。</h1>
       <p>
-        登录后，前端会直接接入现有 JWT 鉴权链，解锁个人中心、我的提交和管理员后台入口。
+        登录后可以直接进入题库、提交记录、个人数据面板和管理后台。整个入口体验按专业 OJ
+        产品来设计，适合在面试时展示完整业务闭环。
       </p>
       <div class="auth-points">
         <div class="auth-point">
           <strong>JWT Session</strong>
-          <span>登录成功后自动解析用户身份与角色信息。</span>
+          <span>登录成功后自动持久化令牌，并恢复当前用户身份与角色权限。</span>
         </div>
         <div class="auth-point">
-          <strong>Role Aware</strong>
-          <span>管理员账号会自动显示后台入口并通过路由守卫保护页面。</span>
+          <strong>Role Routing</strong>
+          <span>管理员账号会自动获得后台入口，普通用户只看到与刷题相关的页面。</span>
         </div>
       </div>
     </section>
@@ -44,7 +45,7 @@
 
       <p class="auth-footer">
         还没有账号？
-        <router-link to="/register">去注册</router-link>
+        <router-link to="/register">立即注册</router-link>
       </p>
     </section>
   </div>
@@ -53,7 +54,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { loginUser } from '../api'
+import { getErrorMessage, loginUser } from '../api'
 import { store } from '../store'
 
 const route = useRoute()
@@ -74,7 +75,7 @@ async function handleSubmit() {
     store.login(result.token)
     router.push((route.query.redirect || '/')?.toString())
   } catch (requestError) {
-    error.value = requestError.response?.data?.error || '登录失败，请检查账号和密码。'
+    error.value = getErrorMessage(requestError, '登录失败，请检查用户名和密码。')
   } finally {
     loading.value = false
   }

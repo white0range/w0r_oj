@@ -9,6 +9,7 @@ const Login = () => import('./views/Login.vue')
 const Register = () => import('./views/Register.vue')
 const ProblemDetail = () => import('./views/ProblemDetail.vue')
 const Leaderboard = () => import('./views/Leaderboard.vue')
+const StudyPlan = () => import('./views/StudyPlan.vue')
 const Profile = () => import('./views/Profile.vue')
 const MySubmissions = () => import('./views/MySubmissions.vue')
 const SubmissionDetail = () => import('./views/SubmissionDetail.vue')
@@ -17,11 +18,12 @@ const AdminProblemEdit = () => import('./views/admin/AdminProblemEdit.vue')
 const AdminTags = () => import('./views/admin/AdminTags.vue')
 
 const routes = [
-  { path: '/', name: 'home', component: Home, meta: { title: 'Gojo OJ | 题库总览' } },
+  { path: '/', name: 'home', component: Home, meta: { title: 'Gojo OJ | 题库' } },
   { path: '/login', name: 'login', component: Login, meta: { title: 'Gojo OJ | 登录' } },
   { path: '/register', name: 'register', component: Register, meta: { title: 'Gojo OJ | 注册' } },
   { path: '/problems/:id', name: 'problem-detail', component: ProblemDetail, meta: { title: 'Gojo OJ | 题目详情' } },
   { path: '/leaderboard', name: 'leaderboard', component: Leaderboard, meta: { title: 'Gojo OJ | 排行榜' } },
+  { path: '/study-plan', name: 'study-plan', component: StudyPlan, meta: { title: 'Gojo OJ | AI 训练计划', auth: true } },
   { path: '/profile', name: 'profile', component: Profile, meta: { title: 'Gojo OJ | 个人中心', auth: true } },
   { path: '/my-submissions', name: 'my-submissions', component: MySubmissions, meta: { title: 'Gojo OJ | 我的提交', auth: true } },
   { path: '/submissions/:id', name: 'submission-detail', component: SubmissionDetail, meta: { title: 'Gojo OJ | 提交详情', auth: true } },

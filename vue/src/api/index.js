@@ -22,6 +22,10 @@ function unwrapData(payload) {
   return payload?.data ?? payload
 }
 
+export function getErrorMessage(error, fallback = '请求失败') {
+  return error?.response?.data?.message || error?.response?.data?.error || fallback
+}
+
 function currentHashPath() {
   const hash = window.location.hash.replace(/^#/, '')
   return hash || '/'
@@ -60,8 +64,10 @@ export async function registerUser(payload) {
 
 export async function loginUser(payload) {
   const body = getBody(await api.post('/login', payload))
+  const data = unwrapData(body)
+
   return {
-    token: body.token || '',
+    token: data.token || '',
     message: body.message || '登录成功',
   }
 }
@@ -73,14 +79,15 @@ export async function getProfile() {
 
 export async function getProblems(params = {}) {
   const body = getBody(await api.get('/problems', { params }))
+  const data = unwrapData(body)
 
   return {
-    total: Number(body.total || 0),
-    page: Number(body.page || params.page || 1),
-    limit: Number(body.limit || params.limit || 12),
-    tagId: body.tag_id || params.tag_id || '',
+    total: Number(data.total || 0),
+    page: Number(data.page || params.page || 1),
+    limit: Number(data.limit || params.limit || 12),
+    tagId: data.tag_id || params.tag_id || '',
     message: body.message || '',
-    items: (body.items || []).map(normalizeProblem),
+    items: (data.items || []).map(normalizeProblem),
   }
 }
 
@@ -96,16 +103,18 @@ export async function getTags() {
 
 export async function submitCode(payload) {
   const body = getBody(await api.post('/submit', payload))
+  const data = unwrapData(body)
+
   return {
-    submissionId: Number(body.submission_id || 0),
-    status: body.status || 'Pending',
+    submissionId: Number(data.submission_id || 0),
+    status: data.status || 'Pending',
     message: body.message || '提交成功',
   }
 }
 
 export async function getSubmission(id) {
   const body = getBody(await api.get(`/submissions/${id}`))
-  return normalizeSubmission(body)
+  return normalizeSubmission(unwrapData(body))
 }
 
 export async function getMySubmissions(params = {}) {
@@ -131,10 +140,39 @@ export async function getLeaderboard() {
   }
 }
 
+export async function createStudyPlanTask(payload) {
+  const body = getBody(await api.post('/study-plan/tasks', payload))
+  const data = unwrapData(body)
+
+  return {
+    taskId: Number(data.task_id || 0),
+    status: data.status || 'pending',
+    goal: data.goal || '',
+    message: body.message || '训练计划任务已创建',
+  }
+}
+
+export async function getStudyPlanTask(id) {
+  const body = getBody(await api.get(`/study-plan/tasks/${id}`))
+  return unwrapData(body)
+}
+
+export async function submitStudyPlanFeedback(id, payload) {
+  const body = getBody(await api.post(`/study-plan/tasks/${id}/feedback`, payload))
+  return unwrapData(body)
+}
+
+export async function getStudyPlanFeedback(id) {
+  const body = getBody(await api.get(`/study-plan/tasks/${id}/feedback`))
+  return unwrapData(body)
+}
+
 export async function adminCreateProblem(payload) {
   const body = getBody(await api.post('/admin/problems', payload))
+  const data = unwrapData(body)
+
   return {
-    problemId: Number(body.problem_id || 0),
+    problemId: Number(data.problem_id || 0),
     message: body.message || '创建成功',
   }
 }
@@ -163,8 +201,10 @@ export async function adminGetTestCases(id, params = {}) {
 
 export async function adminAddTestCase(id, payload) {
   const body = getBody(await api.post(`/admin/problems/${id}/cases`, payload))
+  const data = unwrapData(body)
+
   return {
-    caseId: Number(body.case_id || 0),
+    caseId: Number(data.case_id || 0),
     message: body.message || '测试用例已添加',
   }
 }
@@ -176,6 +216,7 @@ export async function adminDeleteTestCase(caseId) {
 
 export async function adminCreateTag(payload) {
   const body = getBody(await api.post('/admin/tags', payload))
+
   return {
     tag: normalizeTag(unwrapData(body)),
     message: body.message || '标签已创建',

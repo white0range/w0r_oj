@@ -1,15 +1,19 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
 	"gojo/internal/app/response"
 	"gojo/internal/study_plan/dto"
+	"gojo/internal/study_plan/model"
 	"gojo/internal/study_plan/service"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +79,90 @@ func (h *StudyPlanHandler) GetTask(c *gin.Context) {
 	response.OK(c, task)
 }
 
+func (h *StudyPlanHandler) StreamTask(c *gin.Context) {
+	taskID, ok := parseTaskID(c)
+	if !ok {
+		return
+	}
+
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	task, err := h.svc.GetTask(c.Request.Context(), userID, taskID)
+	if err != nil {
+		switch {
+		case errors.Is(err, apperror.ErrForbidden):
+			response.FailWithMessage(c, http.StatusForbidden, ecode.Forbidden, "cannot access other users' study plan tasks")
+		default:
+			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "study plan task not found")
+		}
+		return
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "streaming is not supported")
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	lastSnapshot, err := writeTaskEvent(c, task)
+	if err != nil {
+		return
+	}
+	flusher.Flush()
+
+	if isTerminalStudyPlanStatus(task.Status) {
+		return
+	}
+
+	taskTicker := time.NewTicker(time.Second)
+	heartbeatTicker := time.NewTicker(15 * time.Second)
+	defer taskTicker.Stop()
+	defer heartbeatTicker.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-heartbeatTicker.C:
+			if _, err := c.Writer.Write([]byte(": keep-alive\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-taskTicker.C:
+			latestTask, err := h.svc.GetTask(c.Request.Context(), userID, taskID)
+			if err != nil {
+				return
+			}
+
+			currentSnapshot, err := snapshotTask(latestTask)
+			if err != nil {
+				return
+			}
+
+			if currentSnapshot != lastSnapshot {
+				if _, err := writeTaskEvent(c, latestTask); err != nil {
+					return
+				}
+				flusher.Flush()
+				lastSnapshot = currentSnapshot
+			}
+
+			if isTerminalStudyPlanStatus(latestTask.Status) {
+				return
+			}
+		}
+	}
+}
+
 func (h *StudyPlanHandler) SubmitFeedback(c *gin.Context) {
 	taskID, ok := parseTaskID(c)
 	if !ok {
@@ -104,9 +192,9 @@ func (h *StudyPlanHandler) SubmitFeedback(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"task_id":  feedback.TaskID,
-		"helpful":  feedback.Helpful,
-		"comment":  feedback.Comment,
+		"task_id": feedback.TaskID,
+		"helpful": feedback.Helpful,
+		"comment": feedback.Comment,
 	})
 }
 
@@ -347,4 +435,30 @@ func getCurrentUserID(c *gin.Context) (uint, bool) {
 	}
 
 	return userID, true
+}
+
+func writeTaskEvent(c *gin.Context, task *model.StudyPlanTask) (string, error) {
+	payload, err := snapshotTask(task)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", payload); err != nil {
+		return "", err
+	}
+
+	return payload, nil
+}
+
+func snapshotTask(task *model.StudyPlanTask) (string, error) {
+	payload, err := json.Marshal(task)
+	if err != nil {
+		return "", err
+	}
+
+	return string(payload), nil
+}
+
+func isTerminalStudyPlanStatus(status string) bool {
+	return status == model.TaskStatusSucceeded || status == model.TaskStatusFailed
 }

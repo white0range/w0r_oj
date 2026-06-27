@@ -19,6 +19,7 @@ type RankRecord struct {
 type LeaderboardRepository interface {
 	GetTopN(ctx context.Context, limit int64) ([]RankRecord, error)
 	GetUserRankAndScore(ctx context.Context, userID uint) (rank int64, score int, err error)
+	SeedScores(ctx context.Context, records []RankRecord) error
 }
 
 type leaderboardRepoRedis struct {
@@ -72,4 +73,23 @@ func (r *leaderboardRepoRedis) GetUserRankAndScore(ctx context.Context, userID u
 	}
 
 	return rank + 1, int(score), nil
+}
+
+func (r *leaderboardRepoRedis) SeedScores(ctx context.Context, records []RankRecord) error {
+	pipe := cache.Rdb.TxPipeline()
+	pipe.Del(ctx, r.leaderboardKey)
+
+	if len(records) > 0 {
+		members := make([]redis.Z, 0, len(records))
+		for _, rec := range records {
+			members = append(members, redis.Z{
+				Score:  float64(rec.Score),
+				Member: strconv.Itoa(int(rec.UserID)),
+			})
+		}
+		pipe.ZAdd(ctx, r.leaderboardKey, members...)
+	}
+
+	_, err := pipe.Exec(ctx)
+	return err
 }

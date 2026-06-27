@@ -11,11 +11,13 @@ from qdrant_client import QdrantClient
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
+# 默认检索 collection 是题目索引 problems。
 DEFAULT_COLLECTION = "problems"
 DEFAULT_QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 
 
 def _embedding_api_key() -> str:
+    # 检索和写入都依赖 DashScope embedding 能力，缺 key 时直接失败，避免悄悄退化。
     key = os.getenv("DASHSCOPE_API_KEY", "")
     if not key:
         raise ValueError("DASHSCOPE_API_KEY is not set")
@@ -31,6 +33,8 @@ def _embedding_dimension() -> int:
 
 
 def embed_query(text: str) -> list[float]:
+    # 把自然语言 query 映射到向量空间。
+    # 对学习规划来说，这一步的输入通常是“用户目标”的改写版本。
     dashscope.api_key = _embedding_api_key()
     response = dashscope.TextEmbedding.call(
         model=_embedding_model(),
@@ -56,10 +60,15 @@ def search_problem_docs(
     collection_name: str = DEFAULT_COLLECTION,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
+    # 语义检索主流程：
+    # 1. 把 query embedding 成向量
+    # 2. 去 Qdrant 查最相似的题目
+    # 3. 统一整理成上层工具可消费的结构
     client = QdrantClient(url=qdrant_url)
     vector = embed_query(query)
 
     if hasattr(client, "search"):
+        # 兼容不同版本 qdrant-client 的查询方法差异。
         results = client.search(
             collection_name=collection_name,
             query_vector=vector,
@@ -77,6 +86,8 @@ def search_problem_docs(
 
     normalized: list[dict[str, Any]] = []
     for result in results:
+        # payload 是建索引时一并存进去的 metadata；
+        # score 是向量相似度，越高通常越相关。
         payload = result.payload or {}
         normalized.append(
             {

@@ -1,21 +1,23 @@
 <template>
   <div class="page">
-    <section class="page-hero page-title-block">
-      <span class="eyebrow">Submissions</span>
-      <div class="page-title">
-        <div>
-          <h1>我的提交</h1>
-          <p class="page-subtitle">这里对接 `/api/my-submissions`，展示当前登录用户的提交历史、状态和查看入口。</p>
+    <section class="page-hero submissions-hero">
+      <div>
+        <span class="eyebrow">Submissions</span>
+        <div class="page-title">
+          <div>
+            <h1>我的提交</h1>
+            <p class="page-subtitle">按状态筛选个人提交记录，查看每次判题的结果入口与基础元数据。</p>
+          </div>
         </div>
-        <div class="hero-mini">
-          <strong>{{ total }}</strong>
-          <span>条记录</span>
-        </div>
+      </div>
+      <div class="hero-summary">
+        <strong>{{ total }}</strong>
+        <span>总提交数</span>
       </div>
     </section>
 
     <section v-if="loading" class="loading-state">
-      <strong>提交记录载入中</strong>
+      <strong>提交记录加载中</strong>
       <span class="spinner spinner-dark"></span>
     </section>
 
@@ -36,26 +38,33 @@
           <span class="muted">第 {{ page }} / {{ totalPages }} 页</span>
         </div>
 
-        <div class="submission-list">
+        <section class="card submission-table">
+          <div class="submission-row submission-head">
+            <span>提交</span>
+            <span>题目</span>
+            <span>语言</span>
+            <span>状态</span>
+            <span>时间</span>
+          </div>
           <router-link
             v-for="item in filteredItems"
             :key="item.id"
             :to="`/submissions/${item.id}`"
-            class="submission-card"
+            class="submission-row submission-item"
           >
+            <div class="submission-cell">
+              <strong>#{{ item.id }}</strong>
+              <small>{{ item.problemId }}</small>
+            </div>
             <div class="submission-main">
-              <div>
-                <span class="submission-id">#{{ item.id }}</span>
-                <h3>{{ item.problemTitle || `题目 #${item.problemId}` }}</h3>
-              </div>
-              <span class="status-pill" :class="statusClass(item.status)">{{ item.status }}</span>
+              <strong>{{ item.problemTitle || `题目 #${item.problemId}` }}</strong>
+              <span>{{ item.actualOutput ? '含结果输出' : '等待查看详情' }}</span>
             </div>
-            <div class="submission-meta">
-              <span class="pill">{{ item.language.toUpperCase() }}</span>
-              <span>{{ formatTime(item.createdAt) }}</span>
-            </div>
+            <span class="pill">{{ item.language.toUpperCase() }}</span>
+            <span class="status-pill" :class="statusClass(item.status)">{{ item.status }}</span>
+            <span class="submission-time">{{ formatTime(item.createdAt) }}</span>
           </router-link>
-        </div>
+        </section>
 
         <div v-if="totalPages > 1" class="pagination">
           <button class="page-chip" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
@@ -73,8 +82,8 @@
       </section>
 
       <section v-else class="empty-state">
-        <strong>你还没有提交记录</strong>
-        <span class="muted">从题库里选一道题，提交第一份代码吧。</span>
+        <strong>还没有提交记录</strong>
+        <span class="muted">从题库选择一道题，提交第一份代码后这里就会开始累积数据。</span>
       </section>
     </template>
   </div>
@@ -96,6 +105,7 @@ const filters = [
   { label: 'AC', value: 'AC' },
   { label: 'Pending', value: 'Pending' },
   { label: 'WA', value: 'WA' },
+  { label: 'RE', value: 'RE' },
 ]
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
@@ -116,7 +126,6 @@ const filteredItems = computed(() => {
   if (statusFilter.value === 'ALL') {
     return items.value
   }
-
   return items.value.filter((item) => item.status === statusFilter.value)
 })
 
@@ -128,7 +137,6 @@ function formatTime(value) {
   if (!value) {
     return '时间未知'
   }
-
   return new Date(value).toLocaleString('zh-CN')
 }
 
@@ -157,17 +165,19 @@ onMounted(fetchItems)
 </script>
 
 <style scoped>
-.page-title-block {
-  padding: 24px 28px;
+.submissions-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
 }
 
-.hero-mini {
+.hero-summary {
   display: grid;
   justify-items: end;
-  gap: 4px;
 }
 
-.hero-mini strong {
+.hero-summary strong {
   font-size: 34px;
   letter-spacing: -0.05em;
 }
@@ -179,78 +189,83 @@ onMounted(fetchItems)
   gap: 16px;
 }
 
-.submission-list {
+.submission-table {
+  padding: 0;
+  overflow: hidden;
+}
+
+.submission-row {
   display: grid;
+  grid-template-columns: 100px 1fr 120px 120px 190px;
   gap: 16px;
-}
-
-.submission-card {
-  display: grid;
-  gap: 16px;
-  padding: 22px;
-  border-radius: 24px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.68);
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--transition), box-shadow var(--transition);
-}
-
-.submission-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
-}
-
-.submission-main,
-.submission-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
-.submission-id {
-  display: inline-block;
+.submission-row:last-child {
+  border-bottom: 0;
+}
+
+.submission-head {
   font-size: 12px;
-  font-weight: 700;
-  color: var(--brand-deep);
-  margin-bottom: 6px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
-.submission-card h3 {
-  margin: 0;
-  font-size: 20px;
+.submission-item:hover {
+  background: rgba(37, 99, 235, 0.04);
 }
 
-.submission-meta {
+.submission-cell,
+.submission-main {
+  display: grid;
+  gap: 6px;
+}
+
+.submission-main span,
+.submission-time,
+.submission-cell small {
   color: var(--ink-soft);
-  font-size: 14px;
 }
 
 .status-pill {
+  width: fit-content;
   padding: 8px 12px;
   border-radius: 999px;
-  font-weight: 700;
-  background: rgba(60, 116, 198, 0.14);
+  background: rgba(37, 99, 235, 0.12);
+  font-weight: 800;
 }
 
-.status-pill.status-AC {
-  background: rgba(31, 141, 96, 0.14);
-}
+@media (max-width: 980px) {
+  .submissions-hero {
+    flex-direction: column;
+    align-items: start;
+  }
 
-.status-pill.status-WA,
-.status-pill.status-RE {
-  background: rgba(187, 77, 58, 0.14);
-}
+  .hero-summary {
+    justify-items: start;
+  }
 
-@media (max-width: 640px) {
   .submissions-toolbar {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .hero-mini {
-    justify-items: start;
+  .submission-row {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .submission-head {
+    display: none;
+  }
+
+  .submission-row > :nth-child(3),
+  .submission-row > :nth-child(4),
+  .submission-row > :nth-child(5) {
+    grid-column: 2 / -1;
   }
 }
 </style>

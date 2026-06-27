@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <section v-if="loading" class="loading-state">
-      <strong>提交详情载入中</strong>
+      <strong>提交详情加载中</strong>
       <span class="spinner spinner-dark"></span>
     </section>
 
@@ -12,13 +12,14 @@
           <div class="page-title">
             <div>
               <h1>{{ submission.status }}</h1>
-              <p class="page-subtitle">详情页直接使用 `/api/submissions/:id`。如果状态还是 `Pending`，页面会自动轮询刷新。</p>
+              <p class="page-subtitle">查看本次提交的代码、判题输出和基础运行指标。</p>
             </div>
           </div>
           <div class="cluster">
             <span class="pill">题目 #{{ submission.problemId }}</span>
             <span class="pill">{{ submission.language.toUpperCase() }}</span>
-            <span class="pill">提交 ID {{ submission.id }}</span>
+            <span class="pill">CPU {{ submission.timeCost }} ms</span>
+            <span class="pill">Memory {{ submission.memoryCost }} KB</span>
           </div>
         </div>
         <router-link to="/my-submissions" class="btn btn-outline">返回提交列表</router-link>
@@ -108,7 +109,7 @@ onUnmounted(() => {
 .output-view {
   margin: 0;
   padding: 18px;
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--surface-dark);
   color: #eef4ff;
   overflow: auto;
@@ -117,12 +118,11 @@ onUnmounted(() => {
 }
 
 .output-view {
-  background: #0e1a30;
+  background: #0b1324;
   color: #d5e3ff;
 }
 
 @media (max-width: 900px) {
-  .submission-hero,
   .detail-grid {
     grid-template-columns: 1fr;
   }

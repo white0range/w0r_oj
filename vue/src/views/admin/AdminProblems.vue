@@ -2,11 +2,13 @@
   <div class="page">
     <section class="page-hero admin-hero">
       <div>
-        <span class="eyebrow">Admin Problems</span>
+        <span class="eyebrow">Problem Center</span>
         <div class="page-title">
           <div>
             <h1>题目管理</h1>
-            <p class="page-subtitle">这里使用公开题目列表接口做管理视图展示，新增、编辑和删除则调用管理员专属接口。</p>
+            <p class="page-subtitle">
+              在这里统一管理题目、标签与题面质量。列表沿用真实数据接口，适合作为完整后台能力展示。
+            </p>
           </div>
         </div>
       </div>
@@ -40,7 +42,7 @@
       <section v-if="problems.length" class="card admin-table">
         <div class="admin-row admin-head">
           <span>ID</span>
-          <span>标题</span>
+          <span>题目</span>
           <span>标签</span>
           <span>提交 / 通过</span>
           <span>操作</span>
@@ -53,7 +55,7 @@
           </div>
           <div class="cluster">
             <span v-for="tag in problem.tags" :key="tag.id" class="mini-tag">{{ tag.name }}</span>
-            <span v-if="!problem.tags.length" class="mini-tag">无标签</span>
+            <span v-if="!problem.tags.length" class="mini-tag">未分类</span>
           </div>
           <span>{{ problem.submitCount }} / {{ problem.acceptedCount }}</span>
           <div class="cluster">
@@ -65,7 +67,7 @@
 
       <section v-else class="empty-state">
         <strong>还没有题目</strong>
-        <span class="muted">先创建一道题，再回来看管理页效果。</span>
+        <span class="muted">先创建第一道题，再回到这里查看完整的后台管理效果。</span>
       </section>
 
       <div v-if="totalPages > 1" class="pagination">
@@ -87,7 +89,9 @@
       <div v-if="deletingTarget" class="dialog-backdrop" @click.self="deletingTarget = null">
         <div class="dialog-card">
           <h3>确认删除题目？</h3>
-          <p>题目《{{ deletingTarget.title }}》将被删除。这里的提示与当前后端真实行为保持一致，不额外夸大连带删除范围。</p>
+          <p>
+            题目《{{ deletingTarget.title }}》将从管理列表中移除。这里保持和后端当前行为一致，不额外夸大删除影响。
+          </p>
           <div class="cluster">
             <button class="btn btn-ghost" @click="deletingTarget = null">取消</button>
             <button class="btn btn-danger" :disabled="deleting" @click="confirmDelete">

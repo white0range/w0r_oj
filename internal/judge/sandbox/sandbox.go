@@ -3,204 +3,278 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
-	"gojo/internal/judge/docker"
-	"gojo/internal/judge/model"
-
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
+
+	"gojo/internal/judge/docker"
+	"gojo/internal/judge/model"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
-// ========= 【新增：定义判题机状态码和战报】 =========
+//go:embed runner/runner_source.txt
+var judgeRunnerSource string
 
-// ===============================================
-// CompileCode 负责将玩家代码编译成二进制文件
-// 返回值：是否编译成功，以及可能产生的编译报错日志
+type runnerExecResult struct {
+	ExitCode     int    `json:"exit_code"`
+	Signal       int    `json:"signal"`
+	WallTimeMS   int64  `json:"wall_time_ms"`
+	CPUTimeMS    int64  `json:"cpu_time_ms"`
+	MaxRSSKB     int64  `json:"max_rss_kb"`
+	WallTimedOut bool   `json:"wall_timed_out"`
+	Stdout       string `json:"stdout"`
+	Stderr       string `json:"stderr"`
+	Error        string `json:"error"`
+}
+
+const linuxSIGXCPU = 24
+
 func CompileCode(ctx context.Context, code string, workDir string) (bool, string, error) {
-	// 1. 把代码写入宿主机的临时目录
 	codePath := filepath.Join(workDir, "main.go")
 	if err := os.WriteFile(codePath, []byte(code), 0644); err != nil {
-		return false, "", fmt.Errorf("写入代码文件失败: %v", err)
+		return false, "", fmt.Errorf("write solution code failed: %w", err)
+	}
+	if err := writeJudgeRunner(workDir); err != nil {
+		return false, "", fmt.Errorf("prepare judge runner failed: %w", err)
 	}
 
-	// 2. 召唤 Docker 进行【纯编译】
 	resp, err := docker.DockerClient.ContainerCreate(ctx,
 		&container.Config{
 			Image:      "golang:alpine",
 			WorkingDir: "/app",
-			// 核心指令：go build -o solution main.go (编译并输出为 solution 文件)
-			Cmd: []string{"sh", "-c", "GO111MODULE=off go build -o solution main.go"},
+			Cmd: []string{
+				"sh",
+				"-c",
+				"if ! GO111MODULE=off go build -o solution main.go; then exit 11; fi; if ! GO111MODULE=off go build -o .judge/runner .judge/runner.go; then exit 12; fi",
+			},
 		},
 		&container.HostConfig{
 			Binds: []string{workDir + ":/app"},
 		}, nil, nil, "")
-
 	if err != nil {
 		return false, "", err
 	}
 	defer docker.DockerClient.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 
-	// 启动编译容器
-	docker.DockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if err := docker.DockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return false, "", fmt.Errorf("start compile container failed: %w", err)
+	}
 
 	statusCh, errCh := docker.DockerClient.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-
-	// 祭出第三台对讲机：一个 10 秒的定时器通道
 	timeoutCh := time.After(10 * time.Second)
-	// 【新增】：定一个变量，专门用来标记是不是运行时错误 (RE)
-	// 死死盯住这三个通道，谁先响就听谁的！
+
 	select {
 	case err := <-errCh:
 		if err != nil {
-			return false, "", fmt.Errorf("Docker系统异常: %v", err)
+			return false, "", fmt.Errorf("compile container wait failed: %w", err)
 		}
 	case status := <-statusCh:
-		// 容器正常结束，准备去拿日志
 		out, _ := docker.DockerClient.ContainerLogs(ctx, resp.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
 		var stdoutBuf, stderrBuf bytes.Buffer
-		stdcopy.StdCopy(&stdoutBuf, &stderrBuf, out)
+		_, _ = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, out)
 
 		if status.StatusCode != 0 {
-			// 编译失败（语法错误等）
-			return false, stderrBuf.String(), nil
+			logOutput := strings.TrimSpace(stderrBuf.String())
+			if status.StatusCode == 11 {
+				return false, logOutput, nil
+			}
+			return false, "", fmt.Errorf("build judge helper failed: %s", logOutput)
 		}
-
 	case <-timeoutCh:
-
-		// 呼叫 Docker 底层 API，发送极其残暴的 SIGKILL 信号，物理拔电
 		if killErr := docker.DockerClient.ContainerKill(ctx, resp.ID, "SIGKILL"); killErr != nil {
-			fmt.Println("❌ 强杀容器失败，可能已经变成僵尸进程:", killErr)
-		} else {
-			fmt.Println("💀 失控容器已被成功销毁！")
+			return false, "", fmt.Errorf("kill compile container failed after timeout: %w", killErr)
 		}
-		return false, "编译超时 (Compile Time Limit Exceeded)", nil
+		return false, "compile timeout exceeded", nil
 	}
 
-	// 编译成功！宿主机的 workDir 下现在已经有了一个名为 "solution" 的二进制文件
 	return true, "", nil
 }
 
-// StartPersistentSandbox 启动一个常驻的测试沙箱
-// 返回容器 ID 和 error
-func StartPersistentSandbox(ctx context.Context, workDir string) (string, error) {
-	// 假设你的 client 叫 dockerClient
-	// 1. 创建容器：让它执行 sleep 3600，保证它不会立刻退出
-	resp, err := docker.DockerClient.ContainerCreate(ctx, &container.Config{
-		Image:      "golang:alpine", // 继续用你之前拉下来的镜像
-		Cmd:        []string{"sleep", "3600"},
-		WorkingDir: "/app", // 容器内的工作目录
-	}, &container.HostConfig{
-		NetworkMode: "none",                      // 👈 绝杀！拔掉网线，让代码在一座真正的孤岛上运行！
-		Binds:       []string{workDir + ":/app"}, // 把宿主机的代码和编译好的 exe 挂载进去
-		// 这里可以加上内存和 CPU 的终极限制，防止死循环炸服
-		Resources: container.Resources{
-			Memory:    256 * 1024 * 1024, // 限制 256MB 内存
-			NanoCPUs:  1 * 1e9,           // 限制 1 个 CPU 核心
-			PidsLimit: &[]int64{64}[0],   // 👈 绝杀！最多只允许 64 个进程存活
-		},
-	}, nil, nil, "")
-
-	if err != nil {
-		return "", fmt.Errorf("创建常驻沙箱失败: %v", err)
+func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB int64) (string, error) {
+	if memoryLimitMB <= 0 {
+		memoryLimitMB = 256
 	}
 
-	// 2. 启动容器
+	memoryLimitBytes := memoryLimitMB * 1024 * 1024
+
+	resp, err := docker.DockerClient.ContainerCreate(ctx, &container.Config{
+		Image:      "golang:alpine",
+		Cmd:        []string{"sleep", "3600"},
+		WorkingDir: "/app",
+	}, &container.HostConfig{
+		NetworkMode: "none",
+		Binds:       []string{workDir + ":/app"},
+		Resources: container.Resources{
+			Memory:     memoryLimitBytes,
+			MemorySwap: memoryLimitBytes,
+			NanoCPUs:   1 * 1e9,
+			PidsLimit:  &[]int64{64}[0],
+		},
+	}, nil, nil, "")
+	if err != nil {
+		return "", fmt.Errorf("create sandbox failed: %w", err)
+	}
+
 	if err := docker.DockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return "", fmt.Errorf("启动常驻沙箱失败: %v", err)
+		return "", fmt.Errorf("start sandbox failed: %w", err)
 	}
 
 	return resp.ID, nil
 }
 
-// ExecTestCase 在正在运行的沙箱中执行单次测试
-// ExecTestCase 在正在运行的沙箱中执行单次测试
-func ExecTestCase(ctx context.Context, containerID string, input string) model.JudgeResult {
-	// 1. 创建 Exec 任务（派小弟进去）
+func ExecTestCase(ctx context.Context, containerID string, input string, cpuLimitMS int, wallLimitMS int, memoryLimitMB int) model.JudgeResult {
+	if cpuLimitMS <= 0 {
+		cpuLimitMS = 1000
+	}
+	if wallLimitMS <= 0 {
+		wallLimitMS = cpuLimitMS * 2
+	}
+	if memoryLimitMB <= 0 {
+		memoryLimitMB = 256
+	}
+
+	memoryLimitKB := memoryLimitMB * 1024
+
 	execCreate, err := docker.DockerClient.ContainerExecCreate(ctx, containerID, container.ExecOptions{
-		Cmd:          []string{"./solution"},
+		Cmd: []string{
+			"/app/.judge/runner",
+			"-bin", "/app/solution",
+			"-cpu-limit-ms", strconv.Itoa(cpuLimitMS),
+			"-wall-limit-ms", strconv.Itoa(wallLimitMS),
+			"-memory-limit-kb", strconv.Itoa(memoryLimitKB),
+		},
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 	})
 	if err != nil {
-		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("无法创建 Exec 任务: %v", err)}
+		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("create exec failed: %w", err)}
 	}
 
-	// 2. 挂载 I/O 流（拉一根窃听线）
 	hijackedResp, err := docker.DockerClient.ContainerExecAttach(ctx, execCreate.ID, container.ExecStartOptions{})
 	if err != nil {
-		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("无法执行测试: %v", err)}
+		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("attach exec failed: %w", err)}
 	}
 	defer hijackedResp.Close()
 
-	// 3. 【极速喂饭】把测试输入喂给标准输入流，然后立刻掐断！
-	_, _ = hijackedResp.Conn.Write([]byte(input + "\n"))
-	hijackedResp.CloseWrite() // 极其关键：防止 scanf 死等
+	_, _ = hijackedResp.Conn.Write([]byte(input))
+	_ = hijackedResp.CloseWrite()
 
-	// 4. 【核心魔法：同步阻塞读取】
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	// 这里的 StdCopy 会一直阻塞，直到小弟把代码跑完，或者外部的 ctx 超时！
-	// 根本不需要你手动写 select 和 time.After，极其优雅！
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
 	_, err = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, hijackedResp.Reader)
-
-	// 5. 检查是不是 TLE (超时被强杀)
-	// 如果外面传进来的 ctx 带有 WithTimeout，到时间后 StdCopy 会强行中断并返回 DeadlineExceeded
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			fmt.Println("⏰ 警报：单次用例执行超时 (TLE)！")
-			return model.JudgeResult{Status: model.StatusTimeLimitExceeded}
-		}
-		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("读取数据流异常: %v", err)}
-	}
-
-	// 6. 检查是不是 RE (运行报错，比如数组越界、除以零)
-	// 我们不查 Container 的状态，我们查这个特定 Exec 任务的退出码！
-	inspectResp, err := docker.DockerClient.ContainerExecInspect(ctx, execCreate.ID)
-	if err != nil {
-		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("无法获取退出码: %v", err)}
-	}
-
-	if inspectResp.ExitCode != 0 {
-		// 💡 核心逻辑：137 通常代表被信号 9 (SIGKILL) 强杀
-		// 如果不是因为超时（TLE）被我们手动杀掉的，那么在内存限制下，它就是 MLE
-		if inspectResp.ExitCode == 137 {
-			// 为了更严谨，可以进一步检查容器状态
-			containerInfo, _ := docker.DockerClient.ContainerInspect(ctx, containerID)
-			if containerInfo.State.OOMKilled {
-				return model.JudgeResult{Status: model.StatusMemoryLimitExceeded, Output: "Memory Limit Exceeded"}
+			return model.JudgeResult{
+				Status:       model.StatusTimeLimitExceeded,
+				Output:       "judge runner deadline exceeded",
+				TimeCost:     cpuLimitMS,
+				WallTimeCost: wallLimitMS,
+				MemoryCost:   memoryLimitKB,
 			}
-			// 如果容器没死但进程死了且退出码是 137，在 OJ 场景下基本也可以判定为 MLE
-			return model.JudgeResult{Status: model.StatusMemoryLimitExceeded}
 		}
+		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("read exec output failed: %w", err)}
+	}
 
+	var runnerResult runnerExecResult
+	if err := json.Unmarshal(bytes.TrimSpace(stdoutBuf.Bytes()), &runnerResult); err != nil {
 		return model.JudgeResult{
-			Status: model.StatusRuntimeError,
-			Output: stderrBuf.String(),
+			Status: model.StatusSystemError,
+			Error: fmt.Errorf(
+				"decode judge runner result failed: %w, stdout=%q stderr=%q",
+				err,
+				stdoutBuf.String(),
+				stderrBuf.String(),
+			),
 		}
 	}
 
-	// 7. 完美运行，返回标准输出结果
-	return model.JudgeResult{
-		Status: model.StatusAccepted,
-		Output: stdoutBuf.String(),
+	if runnerResult.Error != "" {
+		return model.JudgeResult{
+			Status: model.StatusSystemError,
+			Error:  fmt.Errorf("judge runner failed: %s", runnerResult.Error),
+		}
 	}
+
+	result := model.JudgeResult{
+		Status:       model.StatusAccepted,
+		Output:       runnerResult.Stdout,
+		TimeCost:     int(runnerResult.CPUTimeMS),
+		WallTimeCost: int(runnerResult.WallTimeMS),
+		MemoryCost:   int(runnerResult.MaxRSSKB),
+		ExitCode:     runnerResult.ExitCode,
+	}
+
+	if runnerResult.WallTimedOut || runnerResult.CPUTimeMS > int64(cpuLimitMS) || runnerResult.Signal == linuxSIGXCPU {
+		result.Status = model.StatusTimeLimitExceeded
+		result.Output = fmt.Sprintf("time limit exceeded (cpu=%dms wall=%dms)", runnerResult.CPUTimeMS, runnerResult.WallTimeMS)
+		return result
+	}
+
+	if isMemoryLimitExceeded(runnerResult, memoryLimitKB) {
+		result.Status = model.StatusMemoryLimitExceeded
+		result.Output = fmt.Sprintf("memory limit exceeded (peak=%dKB limit=%dKB)", runnerResult.MaxRSSKB, memoryLimitKB)
+		return result
+	}
+
+	if runnerResult.ExitCode != 0 || runnerResult.Signal != 0 {
+		runtimeOutput := strings.TrimSpace(runnerResult.Stderr)
+		if runtimeOutput == "" {
+			runtimeOutput = strings.TrimSpace(runnerResult.Stdout)
+		}
+		if runtimeOutput == "" {
+			runtimeOutput = fmt.Sprintf("process exited with code=%d signal=%d", runnerResult.ExitCode, runnerResult.Signal)
+		}
+		result.Status = model.StatusRuntimeError
+		result.Output = runtimeOutput
+		return result
+	}
+
+	return result
 }
 
-// RemoveSandbox 物理销毁常驻沙箱（由 Service 在 defer 中调用，确保绝对不漏）
 func RemoveSandbox(ctx context.Context, containerID string) {
 	if containerID == "" {
 		return
 	}
-	// 发送 Force: true 强制拔电源，管你里面有没有死循环，瞬间超度！
-	err := docker.DockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
-	if err != nil {
-		fmt.Printf("⚠️ 警告：沙箱容器 %s 销毁失败，可能产生孤儿容器: %v\n", containerID, err)
-	} else {
-		fmt.Printf("💥 沙箱容器 %s 已被成功物理抹杀！\n", containerID)
+	if err := docker.DockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+		fmt.Printf("warning: failed to remove sandbox %s: %v\n", containerID, err)
 	}
+}
+
+func writeJudgeRunner(workDir string) error {
+	judgeDir := filepath.Join(workDir, ".judge")
+	if err := os.MkdirAll(judgeDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(judgeDir, "runner.go"), []byte(judgeRunnerSource), 0644)
+}
+
+func isMemoryLimitExceeded(result runnerExecResult, memoryLimitKB int) bool {
+	if memoryLimitKB <= 0 {
+		return false
+	}
+	if result.MaxRSSKB >= int64(memoryLimitKB) {
+		return true
+	}
+
+	stderrLower := strings.ToLower(result.Stderr)
+	for _, pattern := range []string{
+		"out of memory",
+		"cannot allocate memory",
+		"runtime: failed to create new os thread",
+	} {
+		if strings.Contains(stderrLower, pattern) {
+			return true
+		}
+	}
+
+	return false
 }

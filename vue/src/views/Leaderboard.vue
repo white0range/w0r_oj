@@ -5,15 +5,15 @@
         <span class="eyebrow">Leaderboard</span>
         <div class="page-title">
           <div>
-            <h1>排行榜</h1>
-            <p class="page-subtitle">这里直接对接 `/api/leaderboard`，支持游客查看榜单，登录用户查看自己的实时排名与分数。</p>
+            <h1>全站排行榜</h1>
+            <p class="page-subtitle">展示 Top 50 选手积分，并为登录用户显示自己的实时排名和当前分数。</p>
           </div>
         </div>
       </div>
       <div class="hero-rank">
-        <strong v-if="store.isLoggedIn && myRank > 0">你的当前排名：第 {{ myRank }} 名</strong>
-        <strong v-else-if="store.isLoggedIn">你还没有上榜，先去刷几题吧。</strong>
-        <strong v-else>登录后可查看你的专属排名。</strong>
+        <strong v-if="store.isLoggedIn && myRank > 0">当前排名：第 {{ myRank }} 名</strong>
+        <strong v-else-if="store.isLoggedIn">当前还没有进入榜单</strong>
+        <strong v-else>登录后可查看你的个人排名</strong>
         <span v-if="store.isLoggedIn">积分：{{ myScore }}</span>
       </div>
     </section>
@@ -25,16 +25,11 @@
 
     <template v-else>
       <section v-if="podium.length" class="podium-grid">
-        <article
-          v-for="entry in podium"
-          :key="entry.userId"
-          class="podium-card"
-          :class="`rank-${entry.rank}`"
-        >
-          <span class="podium-rank">#{{ entry.rank }}</span>
+        <article v-for="entry in podium" :key="entry.userId" class="podium-card" :class="`rank-${entry.rank}`">
+          <span class="podium-rank">TOP {{ entry.rank }}</span>
           <span class="podium-avatar">{{ entry.username.slice(0, 1).toUpperCase() }}</span>
           <strong>{{ entry.username }}</strong>
-          <span>{{ entry.score }} 分</span>
+          <span>{{ entry.score }} pts</span>
         </article>
       </section>
 
@@ -61,8 +56,8 @@
       </section>
 
       <section v-if="!top50.length" class="empty-state">
-        <strong>暂时还没有榜单数据</strong>
-        <span class="muted">先去提交几次代码，让这个 OJ 真正动起来。</span>
+        <strong>榜单暂时为空</strong>
+        <span class="muted">先完成几次有效提交，让排行榜真正跑起来。</span>
       </section>
     </template>
   </div>
@@ -97,8 +92,8 @@ onMounted(async () => {
 .leaderboard-hero {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
   align-items: end;
+  gap: 18px;
 }
 
 .hero-rank {
@@ -120,7 +115,7 @@ onMounted(async () => {
 .podium-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .podium-card {
@@ -129,27 +124,28 @@ onMounted(async () => {
   justify-items: center;
   text-align: center;
   padding: 24px;
-  border-radius: 28px;
-  box-shadow: var(--shadow-sm);
   border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--shadow-sm);
 }
 
 .podium-card.rank-1 {
-  background: linear-gradient(135deg, rgba(209, 98, 57, 0.16), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(255, 255, 255, 0.8));
 }
 
 .podium-card.rank-2 {
-  background: linear-gradient(135deg, rgba(60, 116, 198, 0.14), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.8));
 }
 
 .podium-card.rank-3 {
-  background: linear-gradient(135deg, rgba(15, 139, 131, 0.14), rgba(255, 255, 255, 0.76));
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.12), rgba(255, 255, 255, 0.8));
 }
 
 .podium-rank {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   color: var(--brand-deep);
+  letter-spacing: 0.08em;
 }
 
 .podium-avatar,
@@ -160,10 +156,10 @@ onMounted(async () => {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: #f2fffd;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #f8fbff;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .board-table {
@@ -173,7 +169,7 @@ onMounted(async () => {
 
 .board-row {
   display: grid;
-  grid-template-columns: 110px 1fr 100px;
+  grid-template-columns: 120px 1fr 100px;
   gap: 16px;
   align-items: center;
   padding: 16px 20px;
@@ -185,15 +181,15 @@ onMounted(async () => {
 }
 
 .board-head {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   color: var(--ink-faint);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .board-row.current {
-  background: rgba(209, 98, 57, 0.08);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .user-col {
@@ -203,7 +199,7 @@ onMounted(async () => {
 }
 
 .score-col {
-  font-weight: 700;
+  font-weight: 800;
 }
 
 @media (max-width: 720px) {
@@ -218,7 +214,7 @@ onMounted(async () => {
   }
 
   .board-row {
-    grid-template-columns: 76px 1fr 72px;
+    grid-template-columns: 80px 1fr 72px;
     padding: 14px 16px;
   }
 }

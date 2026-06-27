@@ -13,7 +13,11 @@ const (
 )
 
 type JudgeResult struct {
-	Status JudgeStatus
-	Output string
-	Error  error
+	Status       JudgeStatus
+	Output       string
+	Error        error
+	TimeCost     int
+	WallTimeCost int
+	MemoryCost   int
+	ExitCode     int
 }

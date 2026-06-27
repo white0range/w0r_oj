@@ -1,18 +1,18 @@
 <template>
   <div class="page">
     <section v-if="loading" class="loading-state">
-      <strong>题目详情载入中</strong>
+      <strong>题目详情加载中</strong>
       <span class="spinner spinner-dark"></span>
     </section>
 
     <template v-else-if="problem">
-      <section class="page-hero detail-hero">
-        <div class="stack">
+      <section class="page-hero problem-hero">
+        <div class="problem-hero-main">
           <span class="eyebrow">Problem #{{ problem.id }}</span>
           <div class="page-title">
             <div>
               <h1>{{ problem.title }}</h1>
-              <p class="page-subtitle">题目详情来自 `/api/problems/:id`，右侧提交区对接 `/api/submit` 与 `/api/ws`。</p>
+              <p class="page-subtitle">查看题面、资源限制、提交状态，并直接进入在线提交流程。</p>
             </div>
           </div>
           <div class="cluster">
@@ -23,33 +23,43 @@
           </div>
           <div class="cluster">
             <span v-for="tag in problem.tags" :key="tag.id" class="mini-tag">{{ tag.name }}</span>
-            <span v-if="!problem.tags.length" class="mini-tag">暂无标签</span>
+            <span v-if="!problem.tags.length" class="mini-tag">未分类</span>
           </div>
         </div>
+
+        <aside class="hero-side-panel">
+          <div class="hero-side-block">
+            <span class="meta-label">Judge Status</span>
+            <strong>{{ problem.isAc ? 'Already Accepted' : 'Ready to Submit' }}</strong>
+            <p>{{ problem.isAc ? '该账号已经通过这道题，可以继续做代码优化或复盘。' : '建议先阅读题面，再用右侧编辑器提交首个版本。' }}</p>
+          </div>
+        </aside>
       </section>
 
       <section class="detail-grid">
         <article class="card stack">
           <div class="section-title">
             <h2>题目描述</h2>
+            <span class="muted">Raw problem statement</span>
           </div>
           <div class="description-body" v-html="renderedDescription"></div>
         </article>
 
-        <article class="card stack">
+        <article class="card stack submit-panel">
           <div class="section-title">
-            <h2>提交代码</h2>
+            <h2>在线提交</h2>
+            <span class="muted">/api/submit</span>
           </div>
 
-          <div v-if="!store.isLoggedIn" class="empty-state compact">
-            <strong>登录后才能提交</strong>
-            <span class="muted">提交接口需要 JWT 鉴权。登录后即可体验完整判题链路。</span>
+          <div v-if="!store.isLoggedIn" class="empty-state compact-state">
+            <strong>登录后才能提交代码</strong>
+            <span class="muted">当前后端提交接口需要 JWT 鉴权，登录后可体验完整判题链路。</span>
             <router-link to="/login" class="btn btn-primary">去登录</router-link>
           </div>
 
           <template v-else>
             <div class="field">
-              <label for="language">语言</label>
+              <label for="language">编程语言</label>
               <select id="language" v-model="language" class="select">
                 <option value="go">Go</option>
                 <option value="python">Python</option>
@@ -59,7 +69,7 @@
             </div>
 
             <div class="field">
-              <label for="code">代码</label>
+              <label for="code">代码编辑器</label>
               <textarea
                 id="code"
                 v-model="code"
@@ -73,12 +83,14 @@
                 <span v-if="submitting" class="spinner"></span>
                 <span v-else>提交判题</span>
               </button>
-              <button class="btn btn-outline" @click="code = placeholderByLanguage[language]">填入模板</button>
+              <button class="btn btn-outline" @click="code = placeholderByLanguage[language]">插入模板</button>
             </div>
 
             <div v-if="submitState" class="submit-feedback" :class="submitState.kind">
-              <strong>{{ submitState.title }}</strong>
-              <p>{{ submitState.message }}</p>
+              <div>
+                <strong>{{ submitState.title }}</strong>
+                <p>{{ submitState.message }}</p>
+              </div>
               <router-link
                 v-if="submitState.submissionId"
                 :to="`/submissions/${submitState.submissionId}`"
@@ -94,7 +106,7 @@
 
     <section v-else class="empty-state">
       <strong>题目不存在</strong>
-      <span class="muted">后端没有返回这道题，可能已经被管理员删除。</span>
+      <span class="muted">可能已经被删除，或者当前 ID 无法获取到有效题面。</span>
     </section>
   </div>
 </template>
@@ -102,7 +114,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getProblemDetail, getSubmission, submitCode } from '../api'
+import { getErrorMessage, getProblemDetail, getSubmission, submitCode } from '../api'
 import { store } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
 
@@ -128,7 +140,6 @@ const placeholderByLanguage = {
 const renderedDescription = computed(() => {
   const text = problem.value?.description || ''
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
   return escaped.replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>').replace(/\n/g, '<br>')
 })
 
@@ -165,12 +176,11 @@ async function refreshSubmission() {
 
   try {
     const submission = await getSubmission(currentSubmissionId.value)
-
     if (submission.status !== 'Pending') {
       submitState.value = {
         kind: submission.status === 'AC' ? 'success' : 'warning',
         title: `判题完成：${submission.status}`,
-        message: submission.actualOutput || '可以点击下方按钮查看完整提交结果。',
+        message: submission.actualOutput || '可以点击下方按钮查看完整判题信息。',
         submissionId: submission.id,
       }
       stopPolling()
@@ -225,7 +235,7 @@ async function handleSubmit() {
     submitState.value = {
       kind: 'danger',
       title: '提交失败',
-      message: requestError.response?.data?.error || '后端没有接受这次提交。',
+      message: getErrorMessage(requestError, '后端没有接受这次提交。'),
       submissionId: 0,
     }
   } finally {
@@ -241,14 +251,59 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.problem-hero {
+  display: grid;
+  grid-template-columns: 1.3fr 0.7fr;
+  gap: 20px;
+}
+
+.problem-hero-main {
+  display: grid;
+  gap: 16px;
+}
+
+.hero-side-panel {
+  display: grid;
+  align-content: start;
+}
+
+.hero-side-block {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.meta-label {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-side-block strong {
+  display: block;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.hero-side-block p {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+}
+
 .detail-grid {
   display: grid;
-  gap: 18px;
   grid-template-columns: 1.08fr 0.92fr;
+  gap: 18px;
 }
 
 .description-body {
   font-size: 15px;
+  color: var(--ink);
 }
 
 .description-body :deep(pre) {
@@ -257,56 +312,58 @@ onUnmounted(() => {
   overflow: auto;
   border-radius: 18px;
   background: var(--surface-dark);
-  color: #f2f6ff;
+  color: #edf3ff;
 }
 
-.compact {
-  padding: 24px 16px;
+.submit-panel {
+  align-content: start;
+}
+
+.compact-state {
+  padding: 28px 18px;
 }
 
 .code-editor {
   min-height: 340px;
   background: var(--surface-dark);
-  color: #f2f6ff;
+  color: #edf3ff;
   border-color: rgba(255, 255, 255, 0.08);
-}
-
-.code-editor:focus {
-  background: #162947;
 }
 
 .submit-feedback {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 18px;
-  border-radius: 20px;
+  border-radius: 18px;
 }
 
 .submit-feedback strong {
+  display: block;
   font-size: 18px;
 }
 
 .submit-feedback p {
-  margin: 0;
+  margin: 6px 0 0;
   color: var(--ink-soft);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .submit-feedback.pending {
-  background: rgba(60, 116, 198, 0.12);
+  background: rgba(37, 99, 235, 0.1);
 }
 
 .submit-feedback.success {
-  background: rgba(31, 141, 96, 0.12);
+  background: rgba(21, 128, 61, 0.12);
 }
 
 .submit-feedback.warning,
 .submit-feedback.danger {
-  background: rgba(187, 77, 58, 0.12);
+  background: rgba(220, 38, 38, 0.1);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 980px) {
+  .problem-hero,
   .detail-grid {
     grid-template-columns: 1fr;
   }

@@ -100,3 +100,7 @@ func (s *UserService) GetUsersMapByIDs(ctx context.Context, userIDs []uint) (map
 
 	return userMap, nil
 }
+
+func (s *UserService) GetTopUsersBySolvedCount(ctx context.Context, limit int) ([]model.User, error) {
+	return s.repo.GetTopUsersBySolvedCount(ctx, limit)
+}

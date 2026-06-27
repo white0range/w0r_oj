@@ -189,8 +189,6 @@ gojo/
 ├─ agent/                         # Python AI 服务
 │  ├─ app.py                      # FastAPI 入口
 │  ├─ agent_runner.py             # study_plan agent 入口
-│  ├─ deepseek_runner.py          # 手写 DeepSeek tool loop runtime
-│  ├─ deepseek_tools.py           # DeepSeek tools schema
 │  ├─ tool_executor.py            # tool 执行分发
 │  ├─ client.py                   # 调 Go internal tool API
 │  ├─ schemas.py                  # 请求 / 响应模型
@@ -264,11 +262,12 @@ gojo/
 
 ### 当前 `study_plan` agent 形态
 
-当前不是 LangChain `create_agent`，而是：
+当前 `study_plan` Agent 运行在：
 
-- 手写 DeepSeek runtime
-- LLM 自己决定是否调用工具
-- 代码负责控制循环、边界和收尾
+- LangChain `create_agent`
+- ChatDeepSeek Tool Calling
+- 规则检索 + 语义检索 + memory 增强
+- 本地模板解析生成结构化结果
 
 这样做的原因是：
 
@@ -283,13 +282,11 @@ gojo/
 - `user_tag_stats`
 - `candidate_problems`
 - `semantic_candidate_problems`
-- `finish_study_plan`
 
 其中：
 
 - `candidate_problems`：规则 / 标签候选题召回
 - `semantic_candidate_problems`：Qdrant 语义候选题召回
-- `finish_study_plan`：结构化收尾
 
 ---
 

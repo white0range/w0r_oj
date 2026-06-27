@@ -95,6 +95,7 @@ func SetupRouter(
 		protected.POST("/analysis/tasks/:id/feedback", analysisHandler.SubmitFeedback)
 		protected.GET("/analysis/tasks/:id/feedback", analysisHandler.GetFeedback)
 		protected.POST("/study-plan/tasks", spHandler.CreateTask)
+		protected.GET("/study-plan/tasks/:id/stream", spHandler.StreamTask)
 		protected.GET("/study-plan/tasks/:id", spHandler.GetTask)
 		protected.POST("/study-plan/tasks/:id/feedback", spHandler.SubmitFeedback)
 		protected.GET("/study-plan/tasks/:id/feedback", spHandler.GetFeedback)

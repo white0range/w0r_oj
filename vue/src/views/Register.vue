@@ -1,19 +1,20 @@
 <template>
   <div class="auth-shell">
     <section class="auth-story register-story">
-      <span class="eyebrow">Register</span>
-      <h1>把这个 OJ，真正跑成一条完整的学习链路。</h1>
+      <span class="eyebrow">Create Account</span>
+      <h1>把这套 OJ 体验完整跑通。</h1>
       <p>
-        注册成功后，你就可以体验“登录 → 刷题 → 提交 → 判题 → 查看结果”的完整流程，也能更真实地联调后面的分析和训练规划能力。
+        注册后你就能从“题库浏览、代码提交、判题回写、结果复盘”这条主链路开始体验整个系统，
+        也更适合向面试官展示你对后端能力和产品完整度的把控。
       </p>
       <div class="auth-points">
         <div class="auth-point">
-          <strong>Queue</strong>
-          <span>提交后进入 Redis 判题队列，再由 worker 异步处理。</span>
+          <strong>Queue Pipeline</strong>
+          <span>提交会进入 Redis 判题队列，再由后端 worker 异步消费并回写结果。</span>
         </div>
         <div class="auth-point">
-          <strong>Sandbox</strong>
-          <span>判题依赖 Docker 沙箱执行代码，是整条 OJ 流程的核心一环。</span>
+          <strong>Sandbox Judge</strong>
+          <span>运行阶段由沙箱负责隔离资源限制，这是整条判题链路最核心的一环。</span>
         </div>
       </div>
     </section>
@@ -59,7 +60,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { registerUser } from '../api'
+import { getErrorMessage, registerUser } from '../api'
 
 const router = useRouter()
 const loading = ref(false)
@@ -94,7 +95,7 @@ async function handleSubmit() {
       router.push('/login')
     }, 900)
   } catch (requestError) {
-    error.value = requestError.response?.data?.error || '注册失败，可能用户名已存在。'
+    error.value = getErrorMessage(requestError, '注册失败，可能用户名已存在。')
   } finally {
     loading.value = false
   }

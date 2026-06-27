@@ -1,0 +1,176 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+type runResult struct {
+	ExitCode     int    `json:"exit_code"`
+	Signal       int    `json:"signal"`
+	WallTimeMS   int64  `json:"wall_time_ms"`
+	CPUTimeMS    int64  `json:"cpu_time_ms"`
+	MaxRSSKB     int64  `json:"max_rss_kb"`
+	WallTimedOut bool   `json:"wall_timed_out"`
+	Stdout       string `json:"stdout"`
+	Stderr       string `json:"stderr"`
+	Error        string `json:"error,omitempty"`
+}
+
+func main() {
+	binPath := flag.String("bin", "/app/solution", "binary path")
+	cpuLimitMS := flag.Int("cpu-limit-ms", 1000, "cpu limit in milliseconds")
+	wallLimitMS := flag.Int("wall-limit-ms", 2000, "wall limit in milliseconds")
+	memoryLimitKB := flag.Int("memory-limit-kb", 262144, "memory limit in KB")
+	flag.Parse()
+
+	inputData, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		writeResult(runResult{Error: fmt.Sprintf("read stdin failed: %v", err)})
+		return
+	}
+
+	result := execute(*binPath, inputData, *cpuLimitMS, *wallLimitMS, *memoryLimitKB)
+	writeResult(result)
+}
+
+func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLimitKB int) runResult {
+	var result runResult
+
+	cmd := exec.Command("/bin/sh", "-c", buildLaunchScript(binPath, cpuLimitMS, memoryLimitKB))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		result.Error = fmt.Sprintf("create stdin pipe failed: %v", err)
+		return result
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		result.Error = fmt.Sprintf("create stdout pipe failed: %v", err)
+		return result
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		result.Error = fmt.Sprintf("create stderr pipe failed: %v", err)
+		return result
+	}
+
+	startedAt := time.Now()
+	if err := cmd.Start(); err != nil {
+		result.Error = fmt.Sprintf("start child process failed: %v", err)
+		return result
+	}
+
+	go func() {
+		_, _ = stdinPipe.Write(inputData)
+		_ = stdinPipe.Close()
+	}()
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	var copyWG sync.WaitGroup
+	copyWG.Add(2)
+	go func() {
+		defer copyWG.Done()
+		_, _ = io.Copy(&stdoutBuf, stdoutPipe)
+	}()
+	go func() {
+		defer copyWG.Done()
+		_, _ = io.Copy(&stderrBuf, stderrPipe)
+	}()
+
+	type waitOutcome struct {
+		status syscall.WaitStatus
+		rusage syscall.Rusage
+		err    error
+	}
+
+	waitCh := make(chan waitOutcome, 1)
+	go func(pid int) {
+		var status syscall.WaitStatus
+		var rusage syscall.Rusage
+		_, err := syscall.Wait4(pid, &status, 0, &rusage)
+		waitCh <- waitOutcome{status: status, rusage: rusage, err: err}
+	}(cmd.Process.Pid)
+
+	timer := time.NewTimer(time.Duration(wallLimitMS) * time.Millisecond)
+	defer timer.Stop()
+
+	var outcome waitOutcome
+	select {
+	case outcome = <-waitCh:
+	case <-timer.C:
+		result.WallTimedOut = true
+		_ = killProcessGroup(cmd.Process.Pid)
+		outcome = <-waitCh
+	}
+
+	result.WallTimeMS = time.Since(startedAt).Milliseconds()
+	if outcome.err != nil {
+		result.Error = fmt.Sprintf("wait4 failed: %v", outcome.err)
+	}
+
+	result.CPUTimeMS = timeValToMS(outcome.rusage.Utime) + timeValToMS(outcome.rusage.Stime)
+	result.MaxRSSKB = outcome.rusage.Maxrss
+	result.Stdout = stdoutBuf.String()
+	result.Stderr = stderrBuf.String()
+
+	if outcome.status.Exited() {
+		result.ExitCode = outcome.status.ExitStatus()
+	}
+	if outcome.status.Signaled() {
+		result.Signal = int(outcome.status.Signal())
+	}
+
+	copyWG.Wait()
+	return result
+}
+
+func buildLaunchScript(binPath string, cpuLimitMS, memoryLimitKB int) string {
+	parts := make([]string, 0, 3)
+	if cpuLimitMS > 0 {
+		cpuLimitSeconds := (cpuLimitMS + 999) / 1000
+		if cpuLimitSeconds < 1 {
+			cpuLimitSeconds = 1
+		}
+		parts = append(parts, fmt.Sprintf("ulimit -t %d", cpuLimitSeconds))
+	}
+	if memoryLimitKB > 0 {
+		parts = append(parts, fmt.Sprintf("ulimit -v %d", memoryLimitKB))
+	}
+	parts = append(parts, "exec "+shellQuote(binPath))
+	return strings.Join(parts, "; ")
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func killProcessGroup(pid int) error {
+	return syscall.Kill(-pid, syscall.SIGKILL)
+}
+
+func timeValToMS(tv syscall.Timeval) int64 {
+	return int64(tv.Sec)*1000 + int64(tv.Usec)/1000
+}
+
+func writeResult(result runResult) {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(result); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "encode runner result failed: %v", err)
+		os.Exit(1)
+	}
+}

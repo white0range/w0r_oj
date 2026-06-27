@@ -2,17 +2,19 @@
   <header class="navbar">
     <div class="navbar-shell">
       <router-link to="/" class="brand">
-        <span class="brand-mark">悟</span>
+        <span class="brand-mark">OJ</span>
         <div class="brand-copy">
           <strong>Gojo OJ</strong>
-          <span>Judge. Learn. Iterate.</span>
+          <span>Algorithms · Judge · AI Workflows</span>
         </div>
       </router-link>
 
       <nav class="nav-links desktop-only">
         <router-link to="/" class="nav-link">题库</router-link>
         <router-link to="/leaderboard" class="nav-link">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">我的提交</router-link>
+        <router-link v-if="store.isLoggedIn" to="/study-plan" class="nav-link">AI 训练计划</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">提交记录</router-link>
+        <router-link v-if="store.isLoggedIn" to="/profile" class="nav-link">个人中心</router-link>
         <router-link v-if="store.isAdmin" to="/admin/problems" class="nav-link nav-admin">管理后台</router-link>
       </nav>
 
@@ -20,8 +22,10 @@
         <template v-if="store.isLoggedIn">
           <router-link to="/profile" class="profile-chip" :class="{ admin: store.isAdmin }">
             <span class="profile-avatar">{{ initials }}</span>
-            <span>{{ store.username }}</span>
-            <span v-if="store.isAdmin" class="badge badge-admin">Admin</span>
+            <span class="profile-copy">
+              <strong>{{ store.username }}</strong>
+              <small>{{ store.isAdmin ? 'Administrator' : 'Contestant' }}</small>
+            </span>
           </router-link>
           <button class="btn btn-ghost btn-sm" @click="logout">退出</button>
         </template>
@@ -41,7 +45,8 @@
       <div v-if="menuOpen" class="mobile-panel">
         <router-link to="/" class="mobile-link" @click="closeMenu">题库</router-link>
         <router-link to="/leaderboard" class="mobile-link" @click="closeMenu">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">我的提交</router-link>
+        <router-link v-if="store.isLoggedIn" to="/study-plan" class="mobile-link" @click="closeMenu">AI 训练计划</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">提交记录</router-link>
         <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">个人中心</router-link>
         <router-link v-if="store.isAdmin" to="/admin/problems" class="mobile-link" @click="closeMenu">管理后台</router-link>
         <div class="mobile-actions">
@@ -92,16 +97,15 @@ function logout() {
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: 18px 16px 0;
+  padding: 16px 16px 0;
 }
 
 .navbar-shell,
 .mobile-panel {
   width: min(100%, var(--container));
   margin: 0 auto;
-  border: 1px solid rgba(19, 35, 63, 0.1);
-  border-radius: 999px;
-  background: rgba(255, 252, 247, 0.78);
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-sm);
 }
@@ -110,14 +114,16 @@ function logout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
   padding: 14px 18px;
+  border-radius: 24px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .brand-mark {
@@ -127,15 +133,16 @@ function logout() {
   width: 46px;
   height: 46px;
   border-radius: 16px;
-  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
-  color: #fff8f3;
-  font-size: 18px;
-  font-weight: 700;
-  box-shadow: 0 16px 26px rgba(153, 57, 28, 0.24);
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #f8fbff;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.18);
 }
 
 .brand-copy {
   display: grid;
+  gap: 2px;
 }
 
 .brand-copy strong {
@@ -152,7 +159,7 @@ function logout() {
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .nav-link {
@@ -165,40 +172,52 @@ function logout() {
 
 .nav-link.router-link-active,
 .nav-link:hover {
-  color: var(--ink);
-  background: rgba(19, 35, 63, 0.06);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--brand-deep);
 }
 
 .nav-admin {
-  color: var(--brand-deep);
+  color: var(--accent-deep);
 }
 
 .profile-chip {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px 7px 8px;
+  padding: 7px 12px 7px 8px;
   border-radius: 999px;
-  background: rgba(19, 35, 63, 0.06);
-  color: var(--ink);
-  font-weight: 700;
+  background: rgba(15, 23, 40, 0.05);
 }
 
 .profile-chip.admin {
-  background: rgba(209, 98, 57, 0.12);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .profile-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: #f4fffd;
+  color: #f5fffd;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
+}
+
+.profile-copy {
+  display: grid;
+  line-height: 1.1;
+}
+
+.profile-copy strong {
+  font-size: 13px;
+}
+
+.profile-copy small {
+  color: var(--ink-faint);
+  font-size: 11px;
 }
 
 .mobile-toggle {
@@ -217,17 +236,17 @@ function logout() {
 }
 
 .mobile-panel {
-  margin-top: 12px;
-  border-radius: 28px;
-  padding: 18px;
   display: grid;
   gap: 10px;
+  margin-top: 12px;
+  padding: 18px;
+  border-radius: 24px;
 }
 
 .mobile-link {
   padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.55);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
   font-weight: 700;
 }
 
@@ -237,7 +256,7 @@ function logout() {
   padding-top: 8px;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 980px) {
   .desktop-only {
     display: none;
   }

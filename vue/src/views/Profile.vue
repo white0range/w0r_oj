@@ -5,8 +5,8 @@
         <span class="eyebrow">Profile</span>
         <div class="page-title">
           <div>
-            <h1>{{ profile?.username || store.username || '开发者' }}</h1>
-            <p class="page-subtitle">个人中心直接对接 `/api/profile`，同步用户角色和已解题状态，为前端路由守卫和后台入口提供依据。</p>
+            <h1>{{ profile?.username || store.username || 'User' }}</h1>
+            <p class="page-subtitle">这里集中展示账号画像、已通过题目、AI 训练入口，以及管理员的后台工作台入口。</p>
           </div>
         </div>
       </div>
@@ -14,7 +14,7 @@
       <div class="profile-badge-panel">
         <span class="profile-avatar">{{ (profile?.username || store.username || 'G').slice(0, 1).toUpperCase() }}</span>
         <span class="badge" :class="store.isAdmin ? 'badge-admin' : 'badge-success'">
-          {{ store.isAdmin ? '管理员账号' : '普通用户' }}
+          {{ store.isAdmin ? '管理员' : '普通用户' }}
         </span>
       </div>
     </section>
@@ -28,11 +28,11 @@
       <section class="metric-grid">
         <article class="metric-card">
           <span class="metric-value">{{ profile.solvedCount }}</span>
-          <span class="metric-label">已解题数</span>
+          <span class="metric-label">已解决题目</span>
         </article>
         <article class="metric-card">
           <span class="metric-value">{{ profile.solvedList.length }}</span>
-          <span class="metric-label">已记录 AC 题目</span>
+          <span class="metric-label">AC 记录数</span>
         </article>
         <article class="metric-card">
           <span class="metric-value">{{ profile.role === 1 ? 'Admin' : 'User' }}</span>
@@ -46,6 +46,10 @@
             <h2>快捷入口</h2>
           </div>
           <div class="quick-links">
+            <router-link to="/study-plan" class="quick-link feature-link">
+              <strong>AI 训练计划</strong>
+              <span>基于历史提交和标签画像生成推荐题单</span>
+            </router-link>
             <router-link to="/my-submissions" class="quick-link">查看提交记录</router-link>
             <router-link to="/leaderboard" class="quick-link">进入排行榜</router-link>
             <router-link to="/" class="quick-link">返回题库</router-link>
@@ -55,7 +59,7 @@
 
         <article class="card stack">
           <div class="section-title">
-            <h2>已解题目</h2>
+            <h2>已通过题目</h2>
             <span class="muted">{{ profile.solvedList.length }} items</span>
           </div>
           <div v-if="profile.solvedList.length" class="cluster">
@@ -68,18 +72,29 @@
               #{{ problemId }}
             </router-link>
           </div>
-          <div v-else class="empty-state compact">
+          <div v-else class="empty-state compact-state">
             <strong>还没有 AC 记录</strong>
-            <span class="muted">先去提交一道题，个人中心就会开始累计数据。</span>
+            <span class="muted">先完成几道题，再回来用 AI 训练计划做更有针对性的推荐。</span>
           </div>
         </article>
+      </section>
+
+      <section class="ai-panel">
+        <div>
+          <span class="eyebrow">Agent Workflow</span>
+          <h2>推荐系统已经接到前台了。</h2>
+          <p>现在你可以从前端直接触发 `study_plan` 异步任务，查看弱项标签、推荐题单与总结建议，而不是只在 README 里展示这条能力。</p>
+        </div>
+        <div class="cluster">
+          <router-link to="/study-plan" class="btn btn-secondary">打开 AI 训练计划</router-link>
+        </div>
       </section>
 
       <section v-if="store.isAdmin" class="admin-panel">
         <div>
           <span class="eyebrow">Admin Console</span>
-          <h2>管理员工作区</h2>
-          <p>这里汇总了题目管理、标签管理和新建题目入口，方便你直接演示后台能力以及前后端协作流程。</p>
+          <h2>管理工作区</h2>
+          <p>管理员可以直接在这里进入题目管理、标签管理和新建题目入口，用于展示后台运营能力。</p>
         </div>
         <div class="cluster">
           <router-link to="/admin/problems" class="btn btn-outline">题目管理</router-link>
@@ -91,7 +106,7 @@
 
     <section v-else class="empty-state">
       <strong>没有拿到个人信息</strong>
-      <span class="muted">可以重新登录一次再看看。</span>
+      <span class="muted">可以重新登录后再试一次。</span>
     </section>
   </div>
 </template>
@@ -143,11 +158,11 @@ onMounted(async () => {
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
-  color: #fff9f5;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #f8fbff;
   font-size: 34px;
-  font-weight: 700;
-  box-shadow: 0 20px 34px rgba(153, 57, 28, 0.22);
+  font-weight: 800;
+  box-shadow: 0 20px 34px rgba(37, 99, 235, 0.18);
 }
 
 .profile-grid {
@@ -167,11 +182,23 @@ onMounted(async () => {
 }
 
 .quick-link {
+  display: grid;
+  gap: 4px;
   padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.62);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--line);
   font-weight: 700;
+}
+
+.feature-link {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(15, 118, 110, 0.08));
+}
+
+.quick-link span {
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 600;
 }
 
 .quick-link:hover,
@@ -180,38 +207,48 @@ onMounted(async () => {
 }
 
 .solved-pill {
-  background: rgba(15, 139, 131, 0.12);
-  color: var(--accent);
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent-deep);
 }
 
+.compact-state {
+  padding: 26px 16px;
+}
+
+.ai-panel,
 .admin-panel {
   display: grid;
   gap: 18px;
   padding: 28px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(209, 98, 57, 0.16), rgba(255, 255, 255, 0.72));
-  border: 1px solid rgba(209, 98, 57, 0.16);
   box-shadow: var(--shadow-md);
 }
 
+.ai-panel {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.72));
+  border: 1px solid rgba(15, 118, 110, 0.12);
+}
+
+.admin-panel {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(255, 255, 255, 0.72));
+  border: 1px solid rgba(37, 99, 235, 0.12);
+}
+
+.ai-panel h2,
 .admin-panel h2 {
   margin: 16px 0 8px;
   font-size: 34px;
   letter-spacing: -0.04em;
 }
 
+.ai-panel p,
 .admin-panel p {
   margin: 0;
   max-width: 680px;
   color: var(--ink-soft);
 }
 
-.compact {
-  padding: 24px 16px;
-}
-
 @media (max-width: 820px) {
-  .profile-hero,
   .profile-grid {
     grid-template-columns: 1fr;
   }

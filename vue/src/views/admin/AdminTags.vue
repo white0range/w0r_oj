@@ -2,11 +2,13 @@
   <div class="page">
     <section class="page-hero admin-hero">
       <div>
-        <span class="eyebrow">Admin Tags</span>
+        <span class="eyebrow">Tag Center</span>
         <div class="page-title">
           <div>
             <h1>标签管理</h1>
-            <p class="page-subtitle">新建和删除标签都对接管理员接口，而前台标签展示继续走公开 `/api/tags`。</p>
+            <p class="page-subtitle">
+              统一维护算法标签体系，让题库筛选、题目编排和后台录入都能保持一致。
+            </p>
           </div>
         </div>
       </div>
@@ -21,7 +23,7 @@
         <input v-model.trim="name" class="input" placeholder="例如：动态规划 / 二分 / 图论" required />
         <button class="btn btn-primary" :disabled="creating" type="submit">
           <span v-if="creating" class="spinner"></span>
-          <span v-else>创建</span>
+          <span v-else>创建标签</span>
         </button>
       </form>
       <div v-if="message" class="auth-message" :class="messageType === 'error' ? 'auth-error' : 'auth-success'">
@@ -46,14 +48,14 @@
 
     <section v-else class="empty-state">
       <strong>还没有标签</strong>
-      <span class="muted">先创建一个标签，再回到题目编辑页看联动效果。</span>
+      <span class="muted">先创建一组基础分类，再回到题目编辑页体验标签联动。</span>
     </section>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { adminCreateTag, adminDeleteTag, getTags } from '../../api'
+import { adminCreateTag, adminDeleteTag, getErrorMessage, getTags } from '../../api'
 
 const loading = ref(true)
 const creating = ref(false)
@@ -83,7 +85,7 @@ async function createTag() {
     messageType.value = 'success'
     await fetchTags()
   } catch (requestError) {
-    message.value = requestError.response?.data?.error || '标签创建失败。'
+    message.value = getErrorMessage(requestError, '标签创建失败。')
     messageType.value = 'error'
   } finally {
     creating.value = false

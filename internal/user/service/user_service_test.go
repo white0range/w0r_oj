@@ -15,6 +15,7 @@ type fakeUserRepo struct {
 	getUserByUsernameFn func(ctx context.Context, username string) (*model.User, error)
 	getUserByIDFn       func(ctx context.Context, id uint) (*model.User, error)
 	getUsersByIDsFn     func(ctx context.Context, ids []uint) ([]model.User, error)
+	getTopUsersFn       func(ctx context.Context, limit int) ([]model.User, error)
 }
 
 // 这些方法是为了实现 UserRepository 接口。
@@ -33,6 +34,13 @@ func (f *fakeUserRepo) GetUserByID(ctx context.Context, id uint) (*model.User, e
 
 func (f *fakeUserRepo) GetUsersByIDs(ctx context.Context, ids []uint) ([]model.User, error) {
 	return f.getUsersByIDsFn(ctx, ids)
+}
+
+func (f *fakeUserRepo) GetTopUsersBySolvedCount(ctx context.Context, limit int) ([]model.User, error) {
+	if f.getTopUsersFn == nil {
+		return nil, nil
+	}
+	return f.getTopUsersFn(ctx, limit)
 }
 
 func TestRegisterUser_UsernameExists(t *testing.T) {
