@@ -94,9 +94,10 @@
         <div>
           <span class="eyebrow">Admin Console</span>
           <h2>管理工作区</h2>
-          <p>管理员可以直接在这里进入题目管理、标签管理和新建题目入口，用于展示后台运营能力。</p>
+          <p>管理员可以直接在这里进入用户封禁管理、题目管理、标签管理和新建题目入口，用于展示后台运营能力。</p>
         </div>
         <div class="cluster">
+          <router-link to="/admin/users" class="btn btn-ghost">用户管理</router-link>
           <router-link to="/admin/problems" class="btn btn-outline">题目管理</router-link>
           <router-link to="/admin/problems/new" class="btn btn-primary">新建题目</router-link>
           <router-link to="/admin/tags" class="btn btn-secondary">标签管理</router-link>
@@ -114,15 +115,15 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getProfile } from '../api'
+import { getProfile, logoutUser } from '../api'
 import { store } from '../store'
 
 const router = useRouter()
 const loading = ref(true)
 const profile = ref(null)
 
-function logout() {
-  store.logout()
+async function logout() {
+  await logoutUser()
   router.push('/')
 }
 

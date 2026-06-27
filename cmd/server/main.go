@@ -49,6 +49,7 @@ func main() {
 	}
 
 	ur := userRepo.NewUserRepository()
+	usr := userRepo.NewRefreshSessionRepository()
 	pr := problemRepo.NewProblemRepository()
 	sr := problemRepo.NewProblemSearchRepository()
 	subR := subRepo.NewSubmissionRepository()
@@ -61,7 +62,7 @@ func main() {
 
 	aiProvider := ai.NewAIProvider()
 	submissionService := subSvc.NewSubmissionService(subR)
-	userService := userSvc.NewUserService(ur, submissionService)
+	userService := userSvc.NewUserService(ur, usr, submissionService)
 	problemService := problemSvc.NewProblemService(pr, sr)
 	tagService := problemSvc.NewTagService(problemRepo.NewTagRepository())
 	testCaseService := problemSvc.NewTestCaseService(problemRepo.NewTestCaseRepository())

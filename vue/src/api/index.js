@@ -7,12 +7,15 @@ import {
   normalizeTag,
   normalizeTestCase,
 } from '../utils/normalizers'
-import { clearSession } from '../utils/session'
+import { store } from '../store'
 
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
+  withCredentials: true,
 })
+
+let refreshPromise = null
 
 function getBody(response) {
   return response?.data ?? {}
@@ -31,8 +34,37 @@ function currentHashPath() {
   return hash || '/'
 }
 
+function redirectToLogin() {
+  const path = currentHashPath()
+  if (!path.startsWith('/login') && !path.startsWith('/register')) {
+    window.location.hash = `#/login?redirect=${encodeURIComponent(path)}`
+  }
+}
+
+async function refreshAccessToken() {
+  const body = getBody(await api.post('/refresh'))
+  const data = unwrapData(body)
+  const accessToken = data.access_token || ''
+  store.setToken(accessToken)
+  return accessToken
+}
+
+export async function bootstrapSession() {
+  if (store.token) {
+    return true
+  }
+
+  try {
+    await refreshAccessToken()
+    return true
+  } catch {
+    store.logout()
+    return false
+  }
+}
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = store.token
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -43,13 +75,36 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      clearSession()
+  async (error) => {
+    const status = error.response?.status
+    const originalRequest = error.config || {}
+    const url = String(originalRequest.url || '')
+    const isAuthRequest = url.includes('/login') || url.includes('/register') || url.includes('/refresh') || url.includes('/logout')
 
-      const path = currentHashPath()
-      if (!path.startsWith('/login') && !path.startsWith('/register')) {
-        window.location.hash = `#/login?redirect=${encodeURIComponent(path)}`
+    if (status === 401 && !isAuthRequest && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken().finally(() => {
+            refreshPromise = null
+          })
+        }
+
+        const accessToken = await refreshPromise
+        originalRequest.headers = originalRequest.headers || {}
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        return api(originalRequest)
+      } catch {
+        store.logout()
+        redirectToLogin()
+      }
+    }
+
+    if (status === 401 || status === 403) {
+      if (!isAuthRequest) {
+        store.logout()
+        redirectToLogin()
       }
     }
 
@@ -67,8 +122,16 @@ export async function loginUser(payload) {
   const data = unwrapData(body)
 
   return {
-    token: data.token || '',
+    accessToken: data.access_token || '',
     message: body.message || '登录成功',
+  }
+}
+
+export async function logoutUser() {
+  try {
+    await api.post('/logout')
+  } finally {
+    store.logout()
   }
 }
 
@@ -164,6 +227,22 @@ export async function submitStudyPlanFeedback(id, payload) {
 
 export async function getStudyPlanFeedback(id) {
   const body = getBody(await api.get(`/study-plan/tasks/${id}/feedback`))
+  return unwrapData(body)
+}
+
+export async function adminGetUsers(params = {}) {
+  const body = getBody(await api.get('/admin/users', { params }))
+  const data = unwrapData(body)
+  return data.items || []
+}
+
+export async function adminBanUser(id, payload) {
+  const body = getBody(await api.post(`/admin/users/${id}/ban`, payload))
+  return unwrapData(body)
+}
+
+export async function adminUnbanUser(id) {
+  const body = getBody(await api.post(`/admin/users/${id}/unban`))
   return unwrapData(body)
 }
 

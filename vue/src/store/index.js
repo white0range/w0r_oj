@@ -26,7 +26,21 @@ export const store = reactive({
     this.role = parsed.role || 0
 
     persistSession({
-      token: this.token,
+      userId: this.userId,
+      username: this.username,
+      role: this.role,
+    })
+  },
+
+  setToken(token) {
+    const parsed = parseToken(token)
+
+    this.token = token
+    this.userId = parsed.userId || this.userId || 0
+    this.username = parsed.username || this.username || ''
+    this.role = parsed.role || this.role || 0
+
+    persistSession({
       userId: this.userId,
       username: this.username,
       role: this.role,
@@ -39,7 +53,6 @@ export const store = reactive({
     this.role = profile.role ?? this.role
 
     persistSession({
-      token: this.token,
       userId: this.userId,
       username: this.username,
       role: this.role,

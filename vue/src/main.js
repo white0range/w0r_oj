@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
+import { bootstrapSession } from './api'
 import { store } from './store'
 import './styles.css'
 
@@ -13,6 +14,7 @@ const StudyPlan = () => import('./views/StudyPlan.vue')
 const Profile = () => import('./views/Profile.vue')
 const MySubmissions = () => import('./views/MySubmissions.vue')
 const SubmissionDetail = () => import('./views/SubmissionDetail.vue')
+const AdminUsers = () => import('./views/admin/AdminUsers.vue')
 const AdminProblems = () => import('./views/admin/AdminProblems.vue')
 const AdminProblemEdit = () => import('./views/admin/AdminProblemEdit.vue')
 const AdminTags = () => import('./views/admin/AdminTags.vue')
@@ -27,6 +29,7 @@ const routes = [
   { path: '/profile', name: 'profile', component: Profile, meta: { title: 'Gojo OJ | 个人中心', auth: true } },
   { path: '/my-submissions', name: 'my-submissions', component: MySubmissions, meta: { title: 'Gojo OJ | 我的提交', auth: true } },
   { path: '/submissions/:id', name: 'submission-detail', component: SubmissionDetail, meta: { title: 'Gojo OJ | 提交详情', auth: true } },
+  { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { title: 'Gojo OJ | 用户管理', auth: true, admin: true } },
   { path: '/admin/problems', name: 'admin-problems', component: AdminProblems, meta: { title: 'Gojo OJ | 题目管理', auth: true, admin: true } },
   { path: '/admin/problems/new', name: 'admin-problem-new', component: AdminProblemEdit, meta: { title: 'Gojo OJ | 新建题目', auth: true, admin: true } },
   { path: '/admin/problems/:id/edit', name: 'admin-problem-edit', component: AdminProblemEdit, meta: { title: 'Gojo OJ | 编辑题目', auth: true, admin: true } },
@@ -41,11 +44,14 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   document.title = to.meta.title || 'Gojo OJ'
 
   if (to.meta.auth && !store.isLoggedIn) {
-    return `/login?redirect=${encodeURIComponent(to.fullPath)}`
+    const restored = await bootstrapSession()
+    if (!restored) {
+      return `/login?redirect=${encodeURIComponent(to.fullPath)}`
+    }
   }
 
   if (to.meta.admin && !store.isAdmin) {
@@ -55,4 +61,9 @@ router.beforeEach((to) => {
   return true
 })
 
-createApp(App).use(router).mount('#app')
+async function startApp() {
+  await bootstrapSession()
+  createApp(App).use(router).mount('#app')
+}
+
+startApp()

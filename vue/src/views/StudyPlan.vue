@@ -239,6 +239,7 @@ import {
   getStudyPlanTask,
   submitStudyPlanFeedback,
 } from '../api'
+import { store } from '../store'
 
 const STUDY_PLAN_TASK_KEY = 'gojo:lastStudyPlanTaskId'
 const ACTIVE_TASK_STATUSES = ['pending', 'running']
@@ -427,7 +428,7 @@ function connectTaskStream(taskId) {
     return
   }
 
-  const token = localStorage.getItem('token')
+  const token = store.token
   if (!token) {
     streamState.value = 'error'
     streamMessage.value = '缺少登录凭证，无法建立实时连接。'

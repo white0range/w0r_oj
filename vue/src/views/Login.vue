@@ -72,7 +72,7 @@ async function handleSubmit() {
 
   try {
     const result = await loginUser(form)
-    store.login(result.token)
+    store.login(result.accessToken)
     router.push((route.query.redirect || '/')?.toString())
   } catch (requestError) {
     error.value = getErrorMessage(requestError, '登录失败，请检查用户名和密码。')

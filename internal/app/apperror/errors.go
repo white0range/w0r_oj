@@ -8,6 +8,8 @@ var (
 	ErrWrongPassword      = errors.New("wrong password")
 	ErrPasswordHashFailed = errors.New("password hash failed")
 	ErrTokenGeneration    = errors.New("token generation failed")
+	ErrInvalidToken       = errors.New("invalid token")
+	ErrUserBanned         = errors.New("user banned")
 
 	ErrUnauthorizedAccess = errors.New("unauthorized access")
 	ErrSubmissionNotFound = errors.New("submission not found")

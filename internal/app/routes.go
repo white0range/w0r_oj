@@ -40,6 +40,8 @@ func SetupRouter(
 
 	r.POST("/api/register", uHandler.Register)
 	r.POST("/api/login", uHandler.Login)
+	r.POST("/api/refresh", uHandler.Refresh)
+	r.POST("/api/logout", uHandler.Logout)
 
 	r.GET("/api/problems", pHandler.GetProblemList)
 	r.GET("/api/problems/:id", pHandler.GetProblemDetail)
@@ -61,6 +63,9 @@ func SetupRouter(
 		adminGroup := protected.Group("/admin")
 		adminGroup.Use(middlewares2.AdminCheck())
 		{
+			adminGroup.GET("/users", uHandler.AdminListUsers)
+			adminGroup.POST("/users/:id/ban", uHandler.AdminBanUser)
+			adminGroup.POST("/users/:id/unban", uHandler.AdminUnbanUser)
 			adminGroup.POST("/problems", pHandler.CreateProblem)
 			adminGroup.PUT("/problems/:id", pHandler.UpdateProblem)
 			adminGroup.DELETE("/problems/:id", pHandler.DeleteProblem)

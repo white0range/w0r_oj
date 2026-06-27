@@ -2,58 +2,110 @@ package jwt
 
 import (
 	"errors"
-	"gojo/config"
-	"gojo/internal/user/model"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"gojo/config"
+	"gojo/internal/user/model"
+
+	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
-// 公司的最高机密：签名密钥！
-// 绝对不能泄露，如果有黑客拿到了这串乱码，他就能自己伪造咱们 OJ 平台的手环了
-// var jwtSecret = []byte(config.AppConfig.JWT.Secret)
+const (
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
+)
+
+type Claims struct {
+	UserID       uint   `json:"user_id"`
+	Username     string `json:"username"`
+	Role         int    `json:"role"`
+	TokenVersion int    `json:"token_version"`
+	TokenType    string `json:"token_type"`
+	SessionID    string `json:"sid,omitempty"`
+	jwtv5.RegisteredClaims
+}
+
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+}
+
 func getJWTSecret() []byte {
 	return []byte(config.GlobalConfig.JWT.Secret)
 }
 
-// GenerateToken 负责为登录成功的用户生成专属手环
-// 传入用户的 ID 和用户名，把它们封印在手环里
-func GenerateToken(user *model.User) (string, error) {
-	// 1. 创建手环里面的数据载体（Payload）
-	claims := jwt.MapClaims{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"role":     user.Role,
-		// 设置手环的过期时间，比如 24 小时后失效
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
+func GenerateTokenPair(user *model.User, sessionID string) (*TokenPair, error) {
+	accessToken, err := generateToken(user, TokenTypeAccess, accessTokenTTL(), "")
+	if err != nil {
+		return nil, err
 	}
 
-	// 2. 使用 HS256 算法生成手环的模具
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	refreshToken, err := generateToken(user, TokenTypeRefresh, refreshTokenTTL(), sessionID)
+	if err != nil {
+		return nil, err
+	}
 
-	// 3. 用咱们公司的最高机密盖章，生成最终发给用户的字符串
+	return &TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}, nil
+}
+
+func GenerateToken(user *model.User) (string, error) {
+	return generateToken(user, TokenTypeAccess, accessTokenTTL(), "")
+}
+
+func ParseToken(tokenString, expectedType string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwtv5.ParseWithClaims(tokenString, claims, func(token *jwtv5.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwtv5.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return getJWTSecret(), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+
+	if expectedType != "" && claims.TokenType != expectedType {
+		return nil, errors.New("invalid token type")
+	}
+
+	return claims, nil
+}
+
+func generateToken(user *model.User, tokenType string, ttl time.Duration, sessionID string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID:       user.ID,
+		Username:     user.Username,
+		Role:         user.Role,
+		TokenVersion: user.TokenVersion,
+		TokenType:    tokenType,
+		SessionID:    sessionID,
+		RegisteredClaims: jwtv5.RegisteredClaims{
+			Subject:   "user-session",
+			IssuedAt:  jwtv5.NewNumericDate(now),
+			ExpiresAt: jwtv5.NewNumericDate(now.Add(ttl)),
+		},
+	}
+
+	token := jwtv5.NewWithClaims(jwtv5.SigningMethodHS256, claims)
 	return token.SignedString(getJWTSecret())
 }
 
-// ParseToken 负责验证手环的真伪，并把里面的数据（Payload）提取出来
-// 凭空捏造一个 error 对象，里面装着咱们自定义的汉字，然后把它 return 出去
-// return nil, errors.New("无效的手环")
-func ParseToken(tokenString string) (*jwt.MapClaims, error) {
-	// 1. 解析并校验 Token
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// 把咱们公司的绝密印章提供给解析器，用来比对签名
-		return getJWTSecret(), nil
-	})
-
-	// 2. 如果解析失败，或者手环过期了、被篡改了
-	if err != nil || !token.Valid {
-		return nil, errors.New("无效的手环")
+func accessTokenTTL() time.Duration {
+	minutes := config.GlobalConfig.JWT.AccessTTLMinutes
+	if minutes <= 0 {
+		minutes = 120
 	}
+	return time.Duration(minutes) * time.Minute
+}
 
-	// 3. 把手环里的数据（咱们之前塞进去的 Map）拿出来
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		return &claims, nil
+func refreshTokenTTL() time.Duration {
+	hours := config.GlobalConfig.JWT.RefreshTTLHours
+	if hours <= 0 {
+		hours = 168
 	}
-
-	return nil, errors.New("无法提取手环数据")
+	return time.Duration(hours) * time.Hour
 }

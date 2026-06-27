@@ -45,6 +45,7 @@ export function normalizeProfile(input = {}) {
     id: toNumber(input.ID ?? input.id),
     username: input.Username ?? input.username ?? '',
     role: toNumber(input.Role ?? input.role),
+    status: input.Status ?? input.status ?? 'active',
     solvedCount: toNumber(input.SolvedCount ?? input.solved_count),
     solvedList: (input.SolvedList ?? input.solved_list ?? []).map((item) => toNumber(item)),
   }

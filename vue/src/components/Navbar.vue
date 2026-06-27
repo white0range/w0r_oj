@@ -15,7 +15,7 @@
         <router-link v-if="store.isLoggedIn" to="/study-plan" class="nav-link">AI 训练计划</router-link>
         <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">提交记录</router-link>
         <router-link v-if="store.isLoggedIn" to="/profile" class="nav-link">个人中心</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/problems" class="nav-link nav-admin">管理后台</router-link>
+        <router-link v-if="store.isAdmin" to="/admin/users" class="nav-link nav-admin">管理后台</router-link>
       </nav>
 
       <div class="nav-actions desktop-only">
@@ -48,7 +48,7 @@
         <router-link v-if="store.isLoggedIn" to="/study-plan" class="mobile-link" @click="closeMenu">AI 训练计划</router-link>
         <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">提交记录</router-link>
         <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">个人中心</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/problems" class="mobile-link" @click="closeMenu">管理后台</router-link>
+        <router-link v-if="store.isAdmin" to="/admin/users" class="mobile-link" @click="closeMenu">管理后台</router-link>
         <div class="mobile-actions">
           <template v-if="store.isLoggedIn">
             <button class="btn btn-ghost btn-block" @click="logout">退出当前账号</button>
@@ -66,6 +66,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { logoutUser } from '../api'
 import { store } from '../store'
 
 const menuOpen = ref(false)
@@ -85,8 +86,8 @@ function closeMenu() {
   menuOpen.value = false
 }
 
-function logout() {
-  store.logout()
+async function logout() {
+  await logoutUser()
   closeMenu()
   router.push('/')
 }

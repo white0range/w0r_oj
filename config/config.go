@@ -46,7 +46,9 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	Secret string
+	Secret           string
+	AccessTTLMinutes int `mapstructure:"access_ttl_minutes"`
+	RefreshTTLHours  int `mapstructure:"refresh_ttl_hours"`
 }
 
 type AIConfig struct {
@@ -101,6 +103,8 @@ func InitConfig() {
 	viper.SetDefault("study_plan.worker_count", 3)
 	viper.SetDefault("study_plan.agent_base_url", "http://localhost:8000")
 	viper.SetDefault("study_plan.agent_timeout_seconds", 60)
+	viper.SetDefault("jwt.access_ttl_minutes", 120)
+	viper.SetDefault("jwt.refresh_ttl_hours", 168)
 
 	viper.SetEnvPrefix("GOJO")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
