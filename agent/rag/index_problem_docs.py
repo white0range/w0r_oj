@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import json
 import os
 from pathlib import Path
@@ -61,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--docs", default=str(DEFAULT_DOCS_PATH), help="Path to problem_docs.json")
     parser.add_argument("--qdrant-url", default=DEFAULT_QDRANT_URL, help="Qdrant base URL")
     parser.add_argument("--collection", default=DEFAULT_COLLECTION, help="Qdrant collection name")
-    parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size")
+    parser.add_argument("--batch-size", type=int, default=10, help="Embedding batch size")
     return parser.parse_args()
 
 
@@ -77,3 +77,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

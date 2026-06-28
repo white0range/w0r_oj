@@ -1,4 +1,4 @@
-import os
+﻿import os
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -65,7 +65,7 @@ def ensure_collection(client: QdrantClient, collection_name: str, vector_size: i
 
 
 def qdrant_client(qdrant_url: str = DEFAULT_QDRANT_URL) -> QdrantClient:
-    return QdrantClient(url=qdrant_url)
+    return QdrantClient(url=qdrant_url, timeout=60)
 
 
 def upsert_problem_docs(
@@ -112,3 +112,4 @@ def delete_problem_doc(
         collection_name=collection_name,
         points_selector=PointIdsList(points=[problem_id]),
     )
+

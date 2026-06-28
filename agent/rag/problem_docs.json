@@ -1,0 +1,325 @@
+[
+  {
+    "problem_id": 1,
+    "document": "Title: A+B Problem\nTags: 数组, 模拟, 数学\nDescription: 给定两个整数 a 和 b，输出它们的和。\n\n输入格式：\n一行，包含两个整数 a 和 b。\n\n输出格式：\n输出一个整数，表示 a+b。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "A+B Problem",
+      "tags": [
+        "数组",
+        "模拟",
+        "数学"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 2,
+    "document": "Title: 括号是否合法\nTags: 字符串, 栈\nDescription: 给定一个只包含 ()[]{} 的字符串，判断括号是否完全匹配。\n\n输入格式：\n一行字符串 s。\n\n输出格式：\n若合法输出 true，否则输出 false。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "括号是否合法",
+      "tags": [
+        "字符串",
+        "栈"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 3,
+    "document": "Title: Two Sum 下标对\nTags: 数组, 哈希表\nDescription: 给定长度为 n 的数组和目标值 target，找到两个下标 i<j，使得 a[i]+a[j]=target。\n保证恰好存在一组解。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数。\n第三行一个整数 target。\n\n输出格式：\n输出两个下标（从 0 开始），用空格分隔。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "Two Sum 下标对",
+      "tags": [
+        "数组",
+        "哈希表"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 6,
+    "document": "Title: 有序数组二分查找\nTags: 数组, 二分\nDescription: 给定一个升序数组和目标值 target，输出 target 首次出现的位置；若不存在输出 -1。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个升序整数。\n第三行一个整数 target。\n\n输出格式：\n输出一个整数下标。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "有序数组二分查找",
+      "tags": [
+        "数组",
+        "二分"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 8,
+    "document": "Title: 有序数组平方后排序\nTags: 数组, 排序, 双指针\nDescription: 给定一个非递减数组，返回每个元素平方后的非递减结果。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数。\n\n输出格式：\n输出 n 个整数，按非递减顺序排列。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "有序数组平方后排序",
+      "tags": [
+        "数组",
+        "排序",
+        "双指针"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 10,
+    "document": "Title: 最大子数组和\nTags: 数组, 动态规划\nDescription: 给定一个整数数组，求连续子数组的最大和。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数。\n\n输出格式：\n输出最大子数组和。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "最大子数组和",
+      "tags": [
+        "数组",
+        "动态规划"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 12,
+    "document": "Title: 爬楼梯\nTags: 动态规划, 数学\nDescription: 每次可以爬 1 级或 2 级台阶，求爬到第 n 级台阶有多少种不同方法。\n\n输入格式：\n一行一个整数 n。\n\n输出格式：\n输出方案数。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "爬楼梯",
+      "tags": [
+        "动态规划",
+        "数学"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 14,
+    "document": "Title: 合并区间\nTags: 数组, 排序\nDescription: 给定 n 个区间 [l,r]，合并所有有交集的区间。\n\n输入格式：\n第一行一个整数 n。\n接下来 n 行，每行两个整数 l 和 r。\n\n输出格式：\n第一行输出合并后的区间个数 m。\n接下来 m 行，每行两个整数，按左端点升序输出。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "合并区间",
+      "tags": [
+        "数组",
+        "排序"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 16,
+    "document": "Title: 最长无重复子串长度\nTags: 字符串, 哈希表, 滑动窗口\nDescription: 给定字符串 s，求不含重复字符的最长连续子串长度。\n\n输入格式：\n一行字符串 s。\n\n输出格式：\n输出一个整数。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "最长无重复子串长度",
+      "tags": [
+        "字符串",
+        "哈希表",
+        "滑动窗口"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 18,
+    "document": "Title: 前缀和区间求和\nTags: 数组, 前缀和\nDescription: 给定长度为 n 的数组和 q 次查询，每次查询区间 [l,r] 的元素和。\n\n输入格式：\n第一行两个整数 n 和 q。\n第二行 n 个整数。\n接下来 q 行，每行两个整数 l 和 r（0-based）。\n\n输出格式：\n每次查询输出一行区间和。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "前缀和区间求和",
+      "tags": [
+        "数组",
+        "前缀和"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 20,
+    "document": "Title: 逆波兰表达式求值\nTags: 字符串, 模拟, 栈\nDescription: 给定一个后缀表达式，支持 + - * / 四则运算，除法向 0 截断。\n\n输入格式：\n第一行一个整数 n，表示 token 数量。\n第二行 n 个 token，以空格分隔。\n\n输出格式：\n输出表达式结果。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "逆波兰表达式求值",
+      "tags": [
+        "字符串",
+        "模拟",
+        "栈"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 22,
+    "document": "Title: 反转链表\nTags: 链表\nDescription: 给定一个单链表，输出反转后的链表。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数，表示链表节点值。\n\n输出格式：\n输出反转后的链表节点值，用空格分隔。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "反转链表",
+      "tags": [
+        "链表"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 24,
+    "document": "Title: 合并两个有序链表\nTags: 双指针, 链表\nDescription: 给定两个非递减链表，输出合并后的非递减链表。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数。\n第三行一个整数 m。\n第四行 m 个整数。\n\n输出格式：\n输出合并后的链表，用空格分隔。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "合并两个有序链表",
+      "tags": [
+        "双指针",
+        "链表"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 26,
+    "document": "Title: 二叉树层序遍历\nTags: 队列, 树, 二叉树, BFS\nDescription: 给定一棵二叉树的层序数组表示，-1 表示空节点，输出每一层的节点值。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数，按层序给出。\n\n输出格式：\n第一行输出层数。\n接下来每行输出一层的节点值，节点之间用空格分隔。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "二叉树层序遍历",
+      "tags": [
+        "队列",
+        "树",
+        "二叉树",
+        "BFS"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 28,
+    "document": "Title: 岛屿数量\nTags: 图论, BFS, DFS\nDescription: 给定一个由字符 0 和 1 构成的网格，求岛屿数量。上下左右相邻的 1 属于同一座岛。\n\n输入格式：\n第一行两个整数 n 和 m。\n接下来 n 行，每行一个长度为 m 的字符串。\n\n输出格式：\n输出岛屿数量。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "岛屿数量",
+      "tags": [
+        "图论",
+        "BFS",
+        "DFS"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 30,
+    "document": "Title: 迷宫最短路\nTags: 队列, 图论, BFS\nDescription: 给定一个只包含 0 和 1 的网格，0 表示可走，1 表示障碍。\n从左上角走到右下角，求最短步数；若无法到达输出 -1。\n\n输入格式：\n第一行两个整数 n 和 m。\n接下来 n 行，每行 m 个字符。\n\n输出格式：\n输出最短步数。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "迷宫最短路",
+      "tags": [
+        "队列",
+        "图论",
+        "BFS"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 32,
+    "document": "Title: 零钱兑换最少硬币数\nTags: 动态规划\nDescription: 给定若干硬币面值和目标金额 amount，求凑出 amount 所需的最少硬币数；若无法凑出输出 -1。\n\n输入格式：\n第一行两个整数 n 和 amount。\n第二行 n 个正整数，表示硬币面值。\n\n输出格式：\n输出最少硬币数。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "零钱兑换最少硬币数",
+      "tags": [
+        "动态规划"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 34,
+    "document": "Title: 分发饼干\nTags: 排序, 贪心\nDescription: 每个孩子有一个胃口值，每块饼干有一个尺寸。\n一块饼干只能给一个孩子，且当饼干尺寸不小于孩子胃口值时孩子才会满足。\n求最多能满足多少个孩子。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数，表示孩子胃口值。\n第三行一个整数 m。\n第四行 m 个整数，表示饼干尺寸。\n\n输出格式：\n输出最多满足的孩子数量。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "分发饼干",
+      "tags": [
+        "排序",
+        "贪心"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 36,
+    "document": "Title: 多数元素\nTags: 数组, 贪心, 数学\nDescription: 给定一个长度为 n 的数组，保证存在一个元素出现次数严格大于 n/2，求这个元素。\n\n输入格式：\n第一行一个整数 n。\n第二行 n 个整数。\n\n输出格式：\n输出多数元素。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "多数元素",
+      "tags": [
+        "数组",
+        "贪心",
+        "数学"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 38,
+    "document": "Title: 从 0 到 n 的比特位计数\nTags: 动态规划, 位运算\nDescription: 给定一个非负整数 n，输出从 0 到 n 的每个整数的二进制中 1 的个数。\n\n输入格式：\n一行一个整数 n。\n\n输出格式：\n输出 n+1 个整数，用空格分隔。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "从 0 到 n 的比特位计数",
+      "tags": [
+        "动态规划",
+        "位运算"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  },
+  {
+    "problem_id": 40,
+    "document": "Title: 最小覆盖子串长度\nTags: 字符串, 哈希表, 滑动窗口\nDescription: 给定两个字符串 s 和 t，求 s 中包含 t 所有字符（含重复次数）的最短子串长度；若不存在输出 0。\n\n输入格式：\n第一行字符串 s。\n第二行字符串 t。\n\n输出格式：\n输出最短长度。\nTime Limit: 1000 ms\nMemory Limit: 256 MB\nSubmit Count: 0\nAccepted Count: 0",
+    "metadata": {
+      "title": "最小覆盖子串长度",
+      "tags": [
+        "字符串",
+        "哈希表",
+        "滑动窗口"
+      ],
+      "submit_count": 0,
+      "accepted_count": 0,
+      "time_limit": 1000,
+      "memory_limit": 256
+    }
+  }
+]

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,11 +14,14 @@ import (
 
 	"gojo/config"
 	"gojo/infrastructure/cache"
+	"gojo/infrastructure/mysql"
 	"gojo/internal/study_plan/dto"
 	"gojo/internal/study_plan/model"
 	"gojo/internal/study_plan/repository"
 	userModel "gojo/internal/user/model"
 	jwtPkg "gojo/pkg/jwt"
+
+	"gorm.io/gorm"
 )
 
 type studyPlanAgentRequest struct {
@@ -34,18 +38,13 @@ type StudyPlanWorker struct {
 	repo         repository.StudyPlanRepository
 	httpClient   *http.Client
 	agentBaseURL string
-	agentToken   string
+	serviceUser  *userModel.User
 }
 
 func NewStudyPlanWorker(repo repository.StudyPlanRepository) (*StudyPlanWorker, error) {
-	serviceUser := &userModel.User{
-		Username: "study-plan-agent",
-		Role:     1,
-	}
-
-	agentToken, err := jwtPkg.GenerateToken(serviceUser)
+	serviceUser, err := loadStudyPlanAgentUser(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("generate study plan agent token failed: %w", err)
+		return nil, fmt.Errorf("load study plan agent user failed: %w", err)
 	}
 
 	timeoutSeconds := config.GlobalConfig.StudyPlan.AgentTimeoutSeconds
@@ -64,8 +63,26 @@ func NewStudyPlanWorker(repo repository.StudyPlanRepository) (*StudyPlanWorker, 
 			Timeout: time.Duration(timeoutSeconds) * time.Second,
 		},
 		agentBaseURL: agentBaseURL,
-		agentToken:   agentToken,
+		serviceUser:  serviceUser,
 	}, nil
+}
+
+func loadStudyPlanAgentUser(ctx context.Context) (*userModel.User, error) {
+	var user userModel.User
+	err := mysql.DB.WithContext(ctx).
+		Where("role = ? AND status = ?", 1, userModel.UserStatusActive).
+		Order("id asc").
+		First(&user).Error
+	if err == nil {
+		if user.TokenVersion <= 0 {
+			return nil, fmt.Errorf("admin user %d has invalid token_version=%d", user.ID, user.TokenVersion)
+		}
+		return &user, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("no active admin user found; please create or enable an admin account first")
+	}
+	return nil, err
 }
 
 func (w *StudyPlanWorker) StartWorkerPool(workerCount int) {
@@ -110,6 +127,11 @@ func (w *StudyPlanWorker) ProcessTask(ctx context.Context, taskID uint) error {
 }
 
 func (w *StudyPlanWorker) callStudyPlanAgent(ctx context.Context, userID uint, goal string) (string, error) {
+	agentToken, err := jwtPkg.GenerateToken(w.serviceUser)
+	if err != nil {
+		return "", fmt.Errorf("generate study plan agent token failed: %w", err)
+	}
+
 	reqBody := studyPlanAgentRequest{
 		UserID: userID,
 		Goal:   goal,
@@ -131,7 +153,7 @@ func (w *StudyPlanWorker) callStudyPlanAgent(ctx context.Context, userID uint, g
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+w.agentToken)
+	req.Header.Set("Authorization", "Bearer "+agentToken)
 
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
