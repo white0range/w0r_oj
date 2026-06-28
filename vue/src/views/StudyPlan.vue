@@ -1,355 +1,296 @@
-<template>
-  <div class="page">
-    <section class="page-hero study-hero">
-      <div class="study-hero-copy">
-        <span class="eyebrow">AI Study Plan</span>
-        <div class="page-title">
-          <div>
-            <h1>让推荐 Agent 帮你制定下一轮刷题计划</h1>
-            <p class="page-subtitle">
-              这个页面直接接入后端 `study_plan` 异步任务链路。你给出目标后，系统会结合你的 AC 记录、失败提交和标签统计，
-              生成一份更像专业 OJ 平台的个性化训练建议。
-            </p>
-          </div>
-        </div>
-        <div class="cluster">
-          <button
-            v-for="preset in goalPresets"
-            :key="preset"
-            class="tag-toggle"
-            :class="{ active: goal.trim() === preset }"
-            @click="goal = preset"
-          >
-            {{ preset }}
-          </button>
-        </div>
+﻿<template>
+  <div class="study-shell">
+    <header class="study-header">
+      <div class="study-header-copy">
+        <span class="section-kicker">AI Study Assistant</span>
+        <h1>AI 学习助手</h1>
+        <p>围绕刷题计划、算法问题和题目检索做连续对话，历史上下文会自动保留在当前会话里。</p>
       </div>
+      <div class="study-header-meta">
+        <span class="pill">{{ sessionStatusLabel }}</span>
+        <span class="pill" :class="streamBadgeClass">{{ streamLabel }}</span>
+        <span v-if="currentTurn?.id" class="pill">Turn #{{ currentTurn.id }}</span>
+      </div>
+    </header>
 
-      <aside class="hero-side-panel">
-        <div class="hero-side-block stack">
+    <section class="study-console">
+      <aside class="study-sidebar">
+        <div class="sidebar-head">
           <div>
-            <span class="meta-label">Task Status</span>
-            <strong>{{ statusLabel }}</strong>
+            <span class="section-kicker">Sessions</span>
+            <h2>会话</h2>
           </div>
-          <p>{{ statusDescription }}</p>
-          <div class="cluster">
-            <span v-if="task?.model" class="pill">{{ task.model }}</span>
-            <span v-if="task?.id" class="pill">Task #{{ task.id }}</span>
-            <span class="pill" :class="streamBadgeClass">{{ streamLabel }}</span>
+          <div class="cluster sidebar-actions">
+            <button class="btn btn-primary btn-sm" :disabled="creatingSession" @click="handleCreateSession">
+              <span v-if="creatingSession" class="spinner"></span>
+              <span v-else>新建</span>
+            </button>
+            <button class="btn btn-outline btn-sm" :disabled="loadingSessions" @click="loadSessions(true)">
+              <span v-if="loadingSessions" class="spinner spinner-dark"></span>
+              <span v-else>刷新</span>
+            </button>
           </div>
-          <p v-if="streamMessage" class="muted">{{ streamMessage }}</p>
+        </div>
+
+        <div v-if="sessionMessage" class="auth-message" :class="sessionMessageType === 'error' ? 'auth-error' : 'auth-success'">
+          {{ sessionMessage }}
+        </div>
+
+        <div class="session-list">
+          <template v-if="sessions.length">
+            <button
+              v-for="session in sessions"
+              :key="session.id"
+              class="session-item"
+              :class="{ active: session.id === activeSessionId }"
+              @click="selectSession(session.id)"
+            >
+              <div class="session-item-head">
+                <strong>{{ sessionTitle(session) }}</strong>
+                <span class="session-id">#{{ session.id }}</span>
+              </div>
+              <span class="session-time">{{ formatDate(session.last_message_at || session.updated_at || session.created_at) }}</span>
+              <span v-if="session.summary_text" class="session-memory">已生成摘要记忆</span>
+            </button>
+          </template>
+
+          <div v-else class="empty-state compact-state">
+            <strong>还没有会话</strong>
+            <span class="muted">创建一个会话，开始记录你的训练过程和问题。</span>
+          </div>
         </div>
       </aside>
-    </section>
 
-    <section class="detail-grid">
-      <article class="card stack">
-        <div class="section-title">
-          <h2>创建训练计划</h2>
-          <span class="muted">POST /api/study-plan/tasks</span>
+      <section class="study-stage">
+        <div class="stage-topbar">
+          <div>
+            <h2>{{ activeSession ? sessionTitle(activeSession) : '新的对话' }}</h2>
+            <p>{{ sessionStatusDescription }}</p>
+          </div>
+          <div class="stage-pills">
+            <span class="pill">{{ activeSession ? `Session #${activeSession.id}` : '未选择会话' }}</span>
+            <span v-if="activeSession?.status" class="pill">{{ activeSession.status }}</span>
+          </div>
         </div>
 
-        <div class="field">
-          <label for="goal">这轮你想重点提升什么？</label>
+        <div v-if="activeSession?.summary_text" class="memory-banner">
+          <div class="memory-head">
+            <span class="section-kicker">Session Memory</span>
+            <span class="memory-label">系统摘要</span>
+          </div>
+          <p>{{ activeSession.summary_text }}</p>
+        </div>
+
+        <div ref="messageListRef" class="message-scroll">
+          <template v-if="normalizedMessages.length">
+            <article
+              v-for="message in normalizedMessages"
+              :key="message.id"
+              class="message-row"
+              :class="message.role === 'user' ? 'message-row-user' : 'message-row-assistant'"
+            >
+              <div class="message-avatar" :class="message.role === 'user' ? 'message-avatar-user' : 'message-avatar-assistant'">
+                {{ message.role === 'user' ? '你' : 'AI' }}
+              </div>
+
+              <div class="message-bubble" :class="message.role === 'user' ? 'message-bubble-user' : 'message-bubble-assistant'">
+                <div class="message-meta">
+                  <strong>{{ message.role === 'user' ? '你' : '学习助手' }}</strong>
+                  <span>{{ formatDate(message.created_at) }}</span>
+                </div>
+
+                <div class="message-body">
+                  <template v-if="message.role === 'assistant' && message.parsed">
+                    <div class="message-text assistant-summary">
+                      {{ message.parsed.study_plan_summary || message.content }}
+                    </div>
+
+                    <div v-if="message.parsed.weak_tags.length" class="assistant-section">
+                      <span class="assistant-label">薄弱标签</span>
+                      <div class="cluster">
+                        <span v-for="tag in message.parsed.weak_tags" :key="`${message.id}-${tag}`" class="pill weak-pill">{{ tag }}</span>
+                      </div>
+                    </div>
+
+                    <div v-if="message.parsed.recommended_problems.length" class="assistant-section">
+                      <span class="assistant-label">推荐题目</span>
+                      <div class="recommend-grid">
+                        <router-link
+                          v-for="problem in message.parsed.recommended_problems"
+                          :key="`${message.id}-${problem.problem_id}`"
+                          :to="`/problems/${problem.problem_id}`"
+                          class="recommend-card"
+                        >
+                          <span class="mini-tag">#{{ problem.problem_id }}</span>
+                          <strong>{{ problem.title }}</strong>
+                          <p>{{ problem.reason }}</p>
+                          <span class="recommend-link">进入题目</span>
+                        </router-link>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="message-text">{{ message.content }}</div>
+                  </template>
+                </div>
+              </div>
+            </article>
+          </template>
+
+          <div v-else-if="loadingMessages" class="loading-state inline-state">
+            <span class="spinner spinner-dark"></span>
+            <span class="muted">正在加载会话消息...</span>
+          </div>
+
+          <div v-else class="welcome-panel">
+            <div class="welcome-copy">
+              <span class="section-kicker">开始对话</span>
+              <h3>开始一段新的学习对话</h3>
+              <p>可以直接问算法问题、回忆模糊题目，或者让助手帮你规划下一轮训练。</p>
+            </div>
+            <div class="prompt-grid">
+              <button
+                v-for="preset in promptPresets"
+                :key="preset"
+                class="prompt-card"
+                @click="draft = preset"
+              >
+                {{ preset }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="turnPending" class="assistant-pending">
+            <div class="message-avatar message-avatar-assistant">AI</div>
+            <div class="pending-bubble">
+              <strong>正在生成回复</strong>
+              <span>{{ streamMessage || '完成后会自动写入当前会话。' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer-shell">
+          <div v-if="messageError" class="auth-message auth-error">{{ messageError }}</div>
+
           <textarea
-            id="goal"
-            v-model.trim="goal"
-            class="textarea"
-            placeholder="例如：准备秋招面试，想重点补动态规划、图论和代码实现稳定性。"
+            id="study-chat-input"
+            v-model.trim="draft"
+            class="textarea composer-input"
+            placeholder="输入你的问题，例如：我最近图论建模总是卡住，先帮我分析问题，再给我安排一轮练习。"
+            @keydown.enter.exact.prevent="handleSendMessage"
           ></textarea>
-        </div>
 
-        <div v-if="formMessage" class="auth-message" :class="formMessageType === 'error' ? 'auth-error' : 'auth-success'">
-          {{ formMessage }}
-        </div>
-
-        <div class="cluster">
-          <button class="btn btn-primary" :disabled="creating" @click="handleCreateTask">
-            <span v-if="creating" class="spinner"></span>
-            <span v-else>生成训练计划</span>
-          </button>
-          <button class="btn btn-outline" :disabled="loadingTask" @click="refreshTask()">
-            <span v-if="loadingTask" class="spinner spinner-dark"></span>
-            <span v-else>手动刷新</span>
-          </button>
-          <button v-if="task?.id" class="btn btn-ghost" @click="clearCurrentTask">清除当前任务</button>
-        </div>
-      </article>
-
-      <article class="card stack">
-        <div class="section-title">
-          <h2>当前任务</h2>
-          <span class="muted">GET /api/study-plan/tasks/:id + SSE</span>
-        </div>
-
-        <div v-if="task" class="task-summary-grid">
-          <div class="summary-item">
-            <span class="summary-label">任务编号</span>
-            <strong>#{{ task.id }}</strong>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">目标</span>
-            <strong>{{ task.goal || '未填写具体目标' }}</strong>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">状态</span>
-            <strong :class="statusClass">{{ statusLabel }}</strong>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">最近更新时间</span>
-            <strong>{{ formatDate(task.updated_at || task.created_at) }}</strong>
+          <div class="composer-footer">
+            <div class="composer-hints">
+              <span>{{ sessionStatusDescription }}</span>
+            </div>
+            <div class="cluster composer-actions">
+              <button class="btn btn-outline" :disabled="loadingMessages || !activeSessionId" @click="reloadActiveSession">
+                <span v-if="loadingMessages" class="spinner spinner-dark"></span>
+                <span v-else>刷新消息</span>
+              </button>
+              <button class="btn btn-primary" :disabled="sending || !draft.trim()" @click="handleSendMessage">
+                <span v-if="sending" class="spinner"></span>
+                <span v-else>发送</span>
+              </button>
+            </div>
           </div>
         </div>
-
-        <div v-else class="empty-state compact-state">
-          <strong>还没有训练任务</strong>
-          <span class="muted">先提交一个目标，这里就会显示任务状态和推荐结果。</span>
-        </div>
-
-        <div v-if="task?.status === 'failed'" class="auth-message auth-error">
-          {{ task.error_message || 'Agent 执行失败，请稍后重试。' }}
-        </div>
-      </article>
+      </section>
     </section>
-
-    <section v-if="task?.status === 'running' || task?.status === 'pending'" class="loading-state">
-      <strong>Agent 正在分析你的刷题画像</strong>
-      <span class="muted">
-        现在页面通过 SSE 接收实时任务状态；Go worker 完成任务后，结果会自动推送回来。
-      </span>
-      <span class="spinner spinner-dark"></span>
-    </section>
-
-    <template v-if="parsedResult">
-      <section class="metric-grid">
-        <article class="metric-card">
-          <span class="metric-value">{{ parsedResult.weak_tags.length }}</span>
-          <span class="metric-label">识别出的薄弱标签</span>
-        </article>
-        <article class="metric-card">
-          <span class="metric-value">{{ parsedResult.recommended_problems.length }}</span>
-          <span class="metric-label">推荐题目数量</span>
-        </article>
-        <article class="metric-card">
-          <span class="metric-value">{{ feedback ? '已提交' : '待反馈' }}</span>
-          <span class="metric-label">推荐反馈状态</span>
-        </article>
-      </section>
-
-      <section class="card stack">
-        <div class="section-title">
-          <h2>总结建议</h2>
-          <span class="muted">study_plan_summary</span>
-        </div>
-        <div class="summary-panel">
-          {{ parsedResult.study_plan_summary || 'Agent 已完成任务，但还没有返回总结内容。' }}
-        </div>
-      </section>
-
-      <section class="card stack">
-        <div class="section-title">
-          <h2>薄弱标签</h2>
-          <span class="muted">weak_tags</span>
-        </div>
-        <div v-if="parsedResult.weak_tags.length" class="cluster">
-          <span v-for="tag in parsedResult.weak_tags" :key="tag" class="pill weak-pill">{{ tag }}</span>
-        </div>
-        <div v-else class="empty-state compact-state">
-          <strong>这次没有明确识别出薄弱标签</strong>
-          <span class="muted">可能是历史数据还不够，或者你的目标描述还比较宽泛。</span>
-        </div>
-      </section>
-
-      <section class="card stack">
-        <div class="section-title">
-          <h2>推荐题单</h2>
-          <span class="muted">recommended_problems</span>
-        </div>
-
-        <div v-if="parsedResult.recommended_problems.length" class="recommend-grid">
-          <router-link
-            v-for="problem in parsedResult.recommended_problems"
-            :key="problem.problem_id"
-            :to="`/problems/${problem.problem_id}`"
-            class="recommend-card"
-          >
-            <span class="mini-tag">#{{ problem.problem_id }}</span>
-            <strong>{{ problem.title }}</strong>
-            <p>{{ problem.reason }}</p>
-            <span class="recommend-link">进入题目详情</span>
-          </router-link>
-        </div>
-
-        <div v-else class="empty-state compact-state">
-          <strong>这次没有生成具体推荐题目</strong>
-          <span class="muted">可以换一个更具体的目标，或者先积累更多提交记录后再试一次。</span>
-        </div>
-      </section>
-
-      <section class="card stack">
-        <div class="section-title">
-          <h2>推荐反馈</h2>
-          <span class="muted">POST /api/study-plan/tasks/:id/feedback</span>
-        </div>
-
-        <div v-if="feedback" class="feedback-saved">
-          <span class="badge" :class="feedback.helpful ? 'badge-success' : 'badge-warning'">
-            {{ feedback.helpful ? '认为有帮助' : '认为仍需改进' }}
-          </span>
-          <p>{{ feedback.comment || '没有填写额外说明。' }}</p>
-        </div>
-
-        <template v-else>
-          <div class="cluster">
-            <button class="tag-toggle" :class="{ active: helpful === true }" @click="helpful = true">有帮助</button>
-            <button class="tag-toggle" :class="{ active: helpful === false }" @click="helpful = false">还需改进</button>
-          </div>
-
-          <div class="field">
-            <label for="feedback-comment">补充说明</label>
-            <textarea
-              id="feedback-comment"
-              v-model.trim="feedbackComment"
-              class="textarea"
-              placeholder="例如：推荐方向挺准，但希望多给一些图论基础题。"
-            ></textarea>
-          </div>
-
-          <div v-if="feedbackMessage" class="auth-message" :class="feedbackMessageType === 'error' ? 'auth-error' : 'auth-success'">
-            {{ feedbackMessage }}
-          </div>
-
-          <button class="btn btn-secondary" :disabled="submittingFeedback || helpful === null || !task?.id" @click="handleSubmitFeedback">
-            <span v-if="submittingFeedback" class="spinner"></span>
-            <span v-else>提交反馈</span>
-          </button>
-        </template>
-      </section>
-    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  createStudyPlanTask,
+  createStudyPlanSession,
   getErrorMessage,
-  getStudyPlanFeedback,
-  getStudyPlanTask,
-  submitStudyPlanFeedback,
+  getStudyPlanMessages,
+  getStudyPlanTurn,
+  listStudyPlanSessions,
+  sendStudyPlanMessage,
 } from '../api'
 import { store } from '../store'
 
-const STUDY_PLAN_TASK_KEY = 'gojo:lastStudyPlanTaskId'
-const ACTIVE_TASK_STATUSES = ['pending', 'running']
-const TERMINAL_TASK_STATUSES = ['succeeded', 'failed']
+const STUDY_PLAN_SESSION_KEY = 'gojo:studyPlanSessionId'
+const ACTIVE_TURN_STATUSES = ['pending', 'running']
+const TERMINAL_TURN_STATUSES = ['succeeded', 'failed']
 
 const route = useRoute()
 const router = useRouter()
 
-const goalPresets = [
-  '准备秋招面试，重点补动态规划和图论。',
-  '最近总在边界处理出错，想提升代码稳定性。',
-  '想为两周后的笔试做一轮高频算法冲刺。',
+const promptPresets = [
+  '我最近动态规划总在状态设计上卡住，先帮我定位问题。',
+  '准备笔试，给我安排一轮偏图论和最短路的训练。',
+  '我记得有道题和饭量有关，帮我回忆一下是哪道题。',
 ]
 
-const creating = ref(false)
-const loadingTask = ref(false)
-const goal = ref('')
-const task = ref(null)
-const formMessage = ref('')
-const formMessageType = ref('success')
-const feedbackMessage = ref('')
-const feedbackMessageType = ref('success')
-const submittingFeedback = ref(false)
-const helpful = ref(null)
-const feedbackComment = ref('')
-const feedback = ref(null)
+const sessions = ref([])
+const activeSessionId = ref(0)
+const messages = ref([])
+const currentTurn = ref(null)
+const draft = ref('')
+const loadingSessions = ref(false)
+const loadingMessages = ref(false)
+const creatingSession = ref(false)
+const sending = ref(false)
+const sessionMessage = ref('')
+const sessionMessageType = ref('success')
+const messageError = ref('')
 const streamState = ref('idle')
 const streamMessage = ref('')
+const messageListRef = ref(null)
 
-let taskStream = null
-let taskStreamTaskId = 0
+let turnStream = null
+let turnStreamTurnId = 0
 
-const parsedResult = computed(() => {
-  const raw = task.value?.result
-  if (!raw) {
-    return null
+const activeSession = computed(() => sessions.value.find((item) => item.id === activeSessionId.value) || null)
+
+const normalizedMessages = computed(() => messages.value.map((message) => ({
+  ...message,
+  parsed: parseAssistantPayload(message),
+})))
+
+const turnPending = computed(() => ACTIVE_TURN_STATUSES.includes(currentTurn.value?.status || ''))
+
+const sessionStatusLabel = computed(() => {
+  if (turnPending.value) {
+    return '回复生成中'
   }
-
-  try {
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw
-    return {
-      weak_tags: Array.isArray(data?.weak_tags) ? data.weak_tags : [],
-      recommended_problems: Array.isArray(data?.recommended_problems) ? data.recommended_problems : [],
-      study_plan_summary: data?.study_plan_summary || '',
-    }
-  } catch {
-    return {
-      weak_tags: [],
-      recommended_problems: [],
-      study_plan_summary: String(raw),
-    }
+  if (activeSession.value) {
+    return '会话已就绪'
   }
+  if (sessions.value.length) {
+    return '等待选择会话'
+  }
+  return '尚未开始'
 })
 
-const statusLabel = computed(() => {
-  switch (task.value?.status) {
-    case 'pending':
-      return '等待排队'
-    case 'running':
-      return 'Agent 运行中'
-    case 'succeeded':
-      return '推荐已生成'
-    case 'failed':
-      return '任务失败'
-    default:
-      return '尚未创建任务'
+const sessionStatusDescription = computed(() => {
+  if (turnPending.value) {
+    return '当前回复正在生成，完成后会自动回写到会话记录。'
   }
-})
-
-const statusDescription = computed(() => {
-  switch (task.value?.status) {
-    case 'pending':
-      return '任务已经进入队列，等待 worker 拉起处理。'
-    case 'running':
-      return 'Go worker 正在调用 Python agent 生成训练计划。'
-    case 'succeeded':
-      return '结果已经回写数据库，你现在可以查看总结、题单并提交反馈。'
-    case 'failed':
-      return '这次执行没有成功，通常与 agent 服务、依赖接口或模型请求有关。'
-    default:
-      return '提交目标后，这里会展示任务状态和推荐结果。'
+  if (activeSession.value) {
+    return '你可以在这个会话里连续追问，系统会自动保留上下文。'
   }
-})
-
-const statusClass = computed(() => {
-  switch (task.value?.status) {
-    case 'succeeded':
-      return 'status-AC'
-    case 'failed':
-      return 'status-WA'
-    case 'running':
-    case 'pending':
-      return 'status-Pending'
-    default:
-      return ''
-  }
+  return '创建一个会话，开始记录你的学习问题与训练安排。'
 })
 
 const streamLabel = computed(() => {
   switch (streamState.value) {
     case 'connecting':
-      return 'SSE 连接中'
+      return '建立连接中'
     case 'connected':
-      return 'SSE 已连接'
+      return '实时同步中'
     case 'reconnecting':
-      return 'SSE 重连中'
+      return '正在重连'
     case 'error':
-      return 'SSE 异常'
+      return '连接异常'
     default:
-      return 'SSE 空闲'
+      return '空闲'
   }
 })
 
@@ -367,6 +308,10 @@ const streamBadgeClass = computed(() => {
   }
 })
 
+function sessionTitle(session) {
+  return session?.title?.trim() || '新会话'
+}
+
 function formatDate(value) {
   if (!value) {
     return '未记录'
@@ -380,33 +325,39 @@ function formatDate(value) {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function persistTaskId(taskId) {
-  localStorage.setItem(STUDY_PLAN_TASK_KEY, String(taskId))
-  router.replace({
-    query: {
-      ...route.query,
-      task: String(taskId),
-    },
-  })
-}
-
-function getCurrentTaskId() {
-  const queryTaskId = Number(route.query.task || 0)
-  if (queryTaskId > 0) {
-    return queryTaskId
+function persistSessionId(sessionId) {
+  activeSessionId.value = sessionId
+  if (sessionId > 0) {
+    localStorage.setItem(STUDY_PLAN_SESSION_KEY, String(sessionId))
+  } else {
+    localStorage.removeItem(STUDY_PLAN_SESSION_KEY)
   }
 
-  const storedTaskId = Number(localStorage.getItem(STUDY_PLAN_TASK_KEY) || 0)
-  return storedTaskId > 0 ? storedTaskId : 0
+  const nextQuery = { ...route.query }
+  if (sessionId > 0) {
+    nextQuery.session = String(sessionId)
+  } else {
+    delete nextQuery.session
+  }
+  router.replace({ query: nextQuery })
 }
 
-function closeTaskStream(resetState = true) {
-  if (taskStream) {
-    taskStream.close()
-    taskStream = null
+function getStoredSessionId() {
+  const querySessionId = Number(route.query.session || 0)
+  if (querySessionId > 0) {
+    return querySessionId
   }
 
-  taskStreamTaskId = 0
+  const storedSessionId = Number(localStorage.getItem(STUDY_PLAN_SESSION_KEY) || 0)
+  return storedSessionId > 0 ? storedSessionId : 0
+}
+
+function closeTurnStream(resetState = true) {
+  if (turnStream) {
+    turnStream.close()
+    turnStream = null
+  }
+  turnStreamTurnId = 0
 
   if (resetState) {
     streamState.value = 'idle'
@@ -414,17 +365,152 @@ function closeTaskStream(resetState = true) {
   }
 }
 
-function syncTaskStream() {
-  if (!task.value?.id || !ACTIVE_TASK_STATUSES.includes(task.value.status)) {
-    closeTaskStream(false)
+function scrollMessagesToBottom() {
+  nextTick(() => {
+    const element = messageListRef.value
+    if (!element) {
+      return
+    }
+    element.scrollTop = element.scrollHeight
+  })
+}
+
+function parseAssistantPayload(message) {
+  if (message?.role !== 'assistant') {
+    return null
+  }
+
+  const raw = message.structured_payload || ''
+  if (!raw) {
+    return null
+  }
+
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return {
+      weak_tags: Array.isArray(parsed?.weak_tags) ? parsed.weak_tags : [],
+      recommended_problems: Array.isArray(parsed?.recommended_problems) ? parsed.recommended_problems : [],
+      study_plan_summary: parsed?.study_plan_summary || '',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function ensureActiveSession() {
+  if (activeSessionId.value > 0) {
+    return activeSessionId.value
+  }
+
+  const created = await createStudyPlanSession({ title: '' })
+  await loadSessions(false, created.id)
+  persistSessionId(created.id)
+  return created.id
+}
+
+async function loadSessions(showMessage = false, preferredSessionId = 0) {
+  loadingSessions.value = true
+
+  try {
+    const items = await listStudyPlanSessions({ limit: 50 })
+    sessions.value = items
+
+    const requestedSessionId = preferredSessionId || activeSessionId.value || getStoredSessionId()
+    if (requestedSessionId > 0 && items.some((item) => item.id === requestedSessionId)) {
+      activeSessionId.value = requestedSessionId
+    } else if (items.length > 0) {
+      activeSessionId.value = items[0].id
+    } else {
+      activeSessionId.value = 0
+    }
+
+    if (activeSessionId.value > 0) {
+      persistSessionId(activeSessionId.value)
+    }
+
+    if (showMessage) {
+      sessionMessage.value = '会话列表已刷新。'
+      sessionMessageType.value = 'success'
+    }
+  } catch (error) {
+    sessionMessage.value = getErrorMessage(error, '读取会话列表失败。')
+    sessionMessageType.value = 'error'
+  } finally {
+    loadingSessions.value = false
+  }
+}
+
+async function syncPendingTurn() {
+  closeTurnStream(false)
+  currentTurn.value = null
+
+  const lastTurnId = [...messages.value].reverse().find((item) => Number(item.turn_id || 0) > 0)?.turn_id || 0
+  if (!lastTurnId) {
+    streamState.value = 'idle'
+    streamMessage.value = ''
     return
   }
 
-  connectTaskStream(task.value.id)
+  try {
+    const turn = await getStudyPlanTurn(lastTurnId)
+    currentTurn.value = turn
+    if (ACTIVE_TURN_STATUSES.includes(turn.status || '')) {
+      connectTurnStream(turn.id)
+      return
+    }
+  } catch {
+    currentTurn.value = null
+  }
+
+  streamState.value = 'idle'
+  streamMessage.value = ''
 }
 
-function connectTaskStream(taskId) {
-  if (!taskId || (taskStream && taskStreamTaskId === taskId)) {
+async function loadMessages(sessionId = activeSessionId.value) {
+  if (!sessionId) {
+    messages.value = []
+    currentTurn.value = null
+    closeTurnStream()
+    return
+  }
+
+  loadingMessages.value = true
+  messageError.value = ''
+
+  try {
+    const items = await getStudyPlanMessages(sessionId)
+    messages.value = items
+    await syncPendingTurn()
+    scrollMessagesToBottom()
+  } catch (error) {
+    messageError.value = getErrorMessage(error, '读取会话消息失败。')
+  } finally {
+    loadingMessages.value = false
+  }
+}
+
+async function selectSession(sessionId) {
+  if (!sessionId || sessionId === activeSessionId.value) {
+    if (sessionId) {
+      await loadMessages(sessionId)
+    }
+    return
+  }
+
+  persistSessionId(sessionId)
+  await loadMessages(sessionId)
+}
+
+async function reloadActiveSession() {
+  if (!activeSessionId.value) {
+    return
+  }
+  await loadSessions(false, activeSessionId.value)
+  await loadMessages(activeSessionId.value)
+}
+
+function connectTurnStream(turnId) {
+  if (!turnId || (turnStream && turnStreamTurnId === turnId)) {
     return
   }
 
@@ -435,253 +521,540 @@ function connectTaskStream(taskId) {
     return
   }
 
-  closeTaskStream(false)
+  closeTurnStream(false)
 
-  const source = new EventSource(`/api/study-plan/tasks/${taskId}/stream?token=${encodeURIComponent(token)}`)
-  taskStream = source
-  taskStreamTaskId = taskId
+  const source = new EventSource(`/api/study-plan/turns/${turnId}/stream?token=${encodeURIComponent(token)}`)
+  turnStream = source
+  turnStreamTurnId = turnId
   streamState.value = 'connecting'
-  streamMessage.value = '正在建立实时连接...'
+  streamMessage.value = '正在建立回复同步连接...'
 
   source.onopen = () => {
-    if (taskStream !== source) {
+    if (turnStream !== source) {
       return
     }
-
     streamState.value = 'connected'
-    streamMessage.value = '任务状态将实时推送到当前页面。'
+    streamMessage.value = '连接已建立，当前回复会自动同步。'
   }
 
   source.onmessage = async (event) => {
-    if (taskStream !== source) {
+    if (turnStream !== source) {
       return
     }
 
     try {
-      const nextTask = JSON.parse(event.data)
-      task.value = nextTask
-      persistTaskId(nextTask.id)
-      formMessage.value = ''
+      const nextTurn = JSON.parse(event.data)
+      currentTurn.value = nextTurn
 
-      if (nextTask.status === 'succeeded') {
-        await loadFeedback(nextTask.id)
-        closeTaskStream(false)
+      if (TERMINAL_TURN_STATUSES.includes(nextTurn.status || '')) {
+        closeTurnStream(false)
         streamState.value = 'idle'
-        streamMessage.value = '推荐结果已推送完成。'
-        return
-      }
-
-      if (nextTask.status === 'failed') {
-        closeTaskStream(false)
-        streamState.value = 'idle'
-        streamMessage.value = '任务已结束，可查看失败信息。'
+        streamMessage.value = nextTurn.status === 'succeeded' ? '回复已生成完成。' : '这次回复生成失败，请重试。'
+        await loadSessions(false, activeSessionId.value)
+        await loadMessages(activeSessionId.value)
       }
     } catch {
+      closeTurnStream(false)
       streamState.value = 'error'
-      streamMessage.value = '实时数据解析失败，请手动刷新。'
-      closeTaskStream(false)
+      streamMessage.value = '实时数据解析失败，请刷新当前会话。'
     }
   }
 
   source.onerror = () => {
-    if (taskStream !== source) {
+    if (turnStream !== source) {
       return
     }
 
-    if (task.value?.status && TERMINAL_TASK_STATUSES.includes(task.value.status)) {
-      closeTaskStream(false)
+    if (TERMINAL_TURN_STATUSES.includes(currentTurn.value?.status || '')) {
+      closeTurnStream(false)
       streamState.value = 'idle'
       return
     }
 
     if (source.readyState === EventSource.CLOSED) {
-      closeTaskStream(false)
+      closeTurnStream(false)
       streamState.value = 'error'
-      streamMessage.value = '实时连接已关闭，请手动刷新一次。'
+      streamMessage.value = '实时连接已关闭，请刷新当前会话。'
       return
     }
 
     streamState.value = 'reconnecting'
-    streamMessage.value = '实时连接短暂中断，正在自动重连...'
+    streamMessage.value = '连接短暂中断，正在自动重连...'
   }
 }
 
-async function loadFeedback(taskId) {
-  if (!taskId) {
-    feedback.value = null
+async function handleCreateSession() {
+  creatingSession.value = true
+  sessionMessage.value = ''
+
+  try {
+    const created = await createStudyPlanSession({ title: '' })
+    await loadSessions(false, created.id)
+    persistSessionId(created.id)
+    messages.value = []
+    currentTurn.value = null
+    closeTurnStream()
+    draft.value = ''
+    sessionMessage.value = '新会话已创建。'
+    sessionMessageType.value = 'success'
+  } catch (error) {
+    sessionMessage.value = getErrorMessage(error, '创建会话失败。')
+    sessionMessageType.value = 'error'
+  } finally {
+    creatingSession.value = false
+  }
+}
+
+async function handleSendMessage() {
+  const content = draft.value.trim()
+  if (!content) {
+    messageError.value = '先输入一条消息再发送。'
     return
   }
 
+  sending.value = true
+  messageError.value = ''
+  sessionMessage.value = ''
+
   try {
-    feedback.value = await getStudyPlanFeedback(taskId)
-  } catch (error) {
-    if (error?.response?.status === 404) {
-      feedback.value = null
-      return
+    const sessionId = await ensureActiveSession()
+    const createdTurn = await sendStudyPlanMessage(sessionId, { content })
+    draft.value = ''
+    await loadSessions(false, sessionId)
+    await loadMessages(sessionId)
+    currentTurn.value = {
+      id: createdTurn.turn_id,
+      status: createdTurn.status,
+      model: createdTurn.model,
+      session_id: createdTurn.session_id,
     }
-
-    throw error
-  }
-}
-
-async function refreshTask(taskId = getCurrentTaskId()) {
-  if (!taskId) {
-    return
-  }
-
-  loadingTask.value = true
-
-  try {
-    const nextTask = await getStudyPlanTask(taskId)
-    task.value = nextTask
-    persistTaskId(nextTask.id)
-    formMessage.value = ''
-
-    if (nextTask.status === 'succeeded') {
-      await loadFeedback(nextTask.id)
-      streamState.value = 'idle'
-      streamMessage.value = '推荐结果已就绪。'
-    } else if (nextTask.status === 'failed') {
-      streamState.value = 'idle'
-      streamMessage.value = '任务执行失败，请查看错误信息。'
-    }
-
-    syncTaskStream()
+    connectTurnStream(createdTurn.turn_id)
   } catch (error) {
-    formMessage.value = getErrorMessage(error, '读取训练计划任务失败。')
-    formMessageType.value = 'error'
+    messageError.value = getErrorMessage(error, '发送消息失败。')
   } finally {
-    loadingTask.value = false
-  }
-}
-
-function clearCurrentTask() {
-  closeTaskStream()
-  task.value = null
-  feedback.value = null
-  feedbackComment.value = ''
-  helpful.value = null
-  formMessage.value = ''
-  feedbackMessage.value = ''
-  localStorage.removeItem(STUDY_PLAN_TASK_KEY)
-
-  const nextQuery = { ...route.query }
-  delete nextQuery.task
-  router.replace({ query: nextQuery })
-}
-
-async function handleCreateTask() {
-  if (!goal.value.trim()) {
-    formMessage.value = '先写一个明确目标，Agent 才能给出更有针对性的建议。'
-    formMessageType.value = 'error'
-    return
-  }
-
-  creating.value = true
-  formMessage.value = ''
-  feedbackMessage.value = ''
-  feedback.value = null
-
-  try {
-    const created = await createStudyPlanTask({ goal: goal.value })
-    formMessage.value = '训练任务已创建，正在为你生成计划。'
-    formMessageType.value = 'success'
-    persistTaskId(created.taskId)
-    await refreshTask(created.taskId)
-  } catch (error) {
-    formMessage.value = getErrorMessage(error, '创建训练计划失败。')
-    formMessageType.value = 'error'
-  } finally {
-    creating.value = false
-  }
-}
-
-async function handleSubmitFeedback() {
-  if (!task.value?.id || helpful.value === null) {
-    return
-  }
-
-  submittingFeedback.value = true
-  feedbackMessage.value = ''
-
-  try {
-    feedback.value = await submitStudyPlanFeedback(task.value.id, {
-      helpful: helpful.value,
-      comment: feedbackComment.value,
-    })
-    feedbackMessage.value = '反馈已提交，这能帮助你把这条推荐链路做成完整闭环。'
-    feedbackMessageType.value = 'success'
-  } catch (error) {
-    feedbackMessage.value = getErrorMessage(error, '提交反馈失败。')
-    feedbackMessageType.value = 'error'
-  } finally {
-    submittingFeedback.value = false
+    sending.value = false
   }
 }
 
 onMounted(async () => {
-  const taskId = getCurrentTaskId()
-  if (taskId) {
-    await refreshTask(taskId)
+  await loadSessions(false)
+  if (activeSessionId.value) {
+    await loadMessages(activeSessionId.value)
   }
 })
 
 onUnmounted(() => {
-  closeTaskStream()
+  closeTurnStream()
 })
 </script>
 
 <style scoped>
-.study-hero {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 20px;
-}
-
-.study-hero-copy {
+.study-shell {
   display: grid;
   gap: 18px;
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1.02fr 0.98fr;
+.study-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
   gap: 18px;
+  padding: 6px 4px 2px;
 }
 
-.task-summary-grid {
+.study-header-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.study-header-copy h1 {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 46px);
+  letter-spacing: -0.05em;
+}
+
+.study-header-copy p {
+  margin: 0;
+  color: var(--ink-soft);
+  max-width: 760px;
+}
+
+.study-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.study-console {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 76vh;
+}
+
+.study-sidebar,
+.study-stage {
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow-md);
+}
+
+.study-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+}
+
+.sidebar-head {
+  display: grid;
+  gap: 12px;
+}
+
+.sidebar-head h2,
+.stage-topbar h2,
+.welcome-copy h3 {
+  margin: 6px 0 0;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.sidebar-actions {
+  gap: 8px;
+}
+
+.session-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  max-height: calc(76vh - 120px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.session-item {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  border-radius: 18px;
+  background: rgba(245, 248, 255, 0.82);
+  transition: transform var(--transition), border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.session-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: var(--shadow-sm);
+}
+
+.session-item.active {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(59, 130, 246, 0.05));
+}
+
+.session-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-id,
+.session-time,
+.session-memory,
+.stage-topbar p,
+.memory-label,
+.message-meta span,
+.composer-hints {
+  color: var(--ink-soft);
+}
+
+.session-id,
+.session-memory {
+  font-size: 12px;
+}
+
+.session-time {
+  font-size: 13px;
+}
+
+.session-memory {
+  font-weight: 700;
+}
+
+.study-stage {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 18px;
+}
+
+.stage-topbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4px 2px 0;
+}
+
+.stage-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.memory-banner {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  background: linear-gradient(135deg, rgba(15, 23, 40, 0.035), rgba(37, 99, 235, 0.045));
+}
+
+.memory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.memory-banner p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--ink-soft);
+}
+
+.message-scroll {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  max-height: calc(76vh - 260px);
+  overflow: auto;
+  padding: 4px 6px 4px 2px;
+}
+
+.message-row,
+.assistant-pending {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.message-row-user {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.message-row-user .message-avatar {
+  order: 2;
+}
+
+.message-row-user .message-bubble {
+  order: 1;
+  justify-self: end;
+}
+
+.message-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.message-avatar-user {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.98), rgba(29, 78, 216, 0.82));
+  color: #f8fbff;
+}
+
+.message-avatar-assistant {
+  background: rgba(15, 23, 40, 0.08);
+  color: var(--ink);
+}
+
+.message-bubble,
+.pending-bubble {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 860px);
+  padding: 16px 18px;
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  border-radius: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.message-bubble-user {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.88));
+  color: #f8fbff;
+}
+
+.message-bubble-user .message-meta span,
+.message-bubble-user .message-text {
+  color: rgba(248, 251, 255, 0.82);
+}
+
+.message-bubble-assistant,
+.pending-bubble {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.message-body,
+.assistant-section {
+  display: grid;
+  gap: 12px;
+}
+
+.message-text {
+  white-space: pre-wrap;
+  line-height: 1.75;
+}
+
+.assistant-summary {
+  font-size: 15px;
+}
+
+.assistant-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.recommend-grid {
   display: grid;
   gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.summary-item {
+.recommend-card {
   display: grid;
-  gap: 6px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.66);
+  gap: 10px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  background: rgba(245, 248, 255, 0.92);
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
 }
 
-.summary-label {
-  font-size: 12px;
+.recommend-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow: var(--shadow-sm);
+}
+
+.recommend-card p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.recommend-link {
+  color: var(--brand-deep);
   font-weight: 800;
-  color: var(--ink-faint);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.summary-item strong {
-  font-size: 16px;
-  letter-spacing: -0.02em;
+.welcome-panel {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px dashed rgba(15, 23, 40, 0.16);
+  border-radius: 24px;
+  background: rgba(248, 250, 255, 0.82);
 }
 
-.summary-panel {
-  padding: 20px;
+.welcome-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.welcome-copy p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.prompt-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.prompt-card {
+  text-align: left;
+  padding: 16px 18px;
+  border: 1px solid rgba(15, 23, 40, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-weight: 600;
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.prompt-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-pending {
+  align-items: center;
+}
+
+.pending-bubble strong {
+  font-size: 15px;
+}
+
+.pending-bubble span {
+  color: var(--ink-soft);
+}
+
+.composer-shell {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 23, 40, 0.08);
+}
+
+.composer-input {
+  min-height: 118px;
   border-radius: 22px;
-  background: rgba(37, 99, 235, 0.06);
-  border: 1px solid rgba(37, 99, 235, 0.12);
-  white-space: pre-wrap;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.composer-hints {
+  font-size: 13px;
+}
+
+.composer-actions {
+  justify-content: flex-end;
+}
+
+.inline-state {
+  justify-items: start;
+  padding: 18px;
 }
 
 .weak-pill {
@@ -708,61 +1081,55 @@ onUnmounted(() => {
   color: #b91c1c;
 }
 
-.recommend-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.recommend-card {
-  display: grid;
-  gap: 10px;
-  padding: 18px;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
-  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
-}
-
-.recommend-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(37, 99, 235, 0.22);
-  box-shadow: var(--shadow-sm);
-}
-
-.recommend-card strong {
-  font-size: 18px;
-  letter-spacing: -0.03em;
-}
-
-.recommend-card p,
-.feedback-saved p {
-  margin: 0;
-  color: var(--ink-soft);
-}
-
-.recommend-link {
-  color: var(--brand-deep);
-  font-weight: 800;
-}
-
-.feedback-saved {
-  display: grid;
-  gap: 12px;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(15, 118, 110, 0.08);
-  border: 1px solid rgba(15, 118, 110, 0.12);
-}
-
 .compact-state {
   padding: 24px 16px;
 }
 
-@media (max-width: 980px) {
-  .study-hero,
-  .detail-grid {
+@media (max-width: 1100px) {
+  .study-console {
     grid-template-columns: 1fr;
+  }
+
+  .session-list {
+    max-height: none;
+  }
+
+  .message-scroll {
+    max-height: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .study-header,
+  .stage-topbar,
+  .composer-footer,
+  .memory-head {
+    grid-template-columns: 1fr;
+    display: grid;
+    align-items: start;
+  }
+
+  .message-row,
+  .assistant-pending,
+  .message-row-user {
+    grid-template-columns: 1fr;
+  }
+
+  .message-row-user .message-avatar,
+  .message-row-user .message-bubble {
+    order: initial;
+  }
+
+  .message-bubble,
+  .pending-bubble {
+    width: 100%;
+  }
+
+  .message-avatar {
+    width: 38px;
+    height: 38px;
   }
 }
 </style>
+
+

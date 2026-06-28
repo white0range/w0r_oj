@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
   --bg: #f3f6fb;
@@ -33,7 +33,7 @@
   --radius-md: 24px;
   --radius-lg: 32px;
   --radius-xl: 40px;
-  --container: 1240px;
+  --container: 1480px;
   --transition: 0.22s ease;
 }
 
@@ -135,13 +135,13 @@ button {
 }
 
 .shell-main {
-  width: min(calc(100% - 32px), var(--container));
+  width: min(calc(100% - 40px), var(--container));
   margin: 0 auto;
-  padding: 28px 0 72px;
+  padding: 24px 0 72px;
 }
 
 .shell-footer {
-  width: min(calc(100% - 32px), var(--container));
+  width: min(calc(100% - 40px), var(--container));
   margin: 0 auto;
   padding-bottom: 36px;
 }
@@ -168,7 +168,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 22px 26px;
+  padding: 18px 24px;
 }
 
 .footer-brand {
@@ -188,7 +188,7 @@ button {
 
 .page {
   display: grid;
-  gap: 24px;
+  gap: 20px;
 }
 
 .page-hero {
@@ -641,3 +641,4 @@ button {
     text-align: left;
   }
 }
+

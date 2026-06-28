@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="shell">
     <div class="shell-noise"></div>
     <div class="shell-glow"></div>
@@ -15,7 +15,7 @@
         <div>
           <div class="footer-brand">Gojo OJ</div>
           <div class="footer-caption">
-            Professional online judge for algorithm practice, async judging, progress tracking, and AI-assisted learning workflows.
+            Online judge for algorithm practice, asynchronous judging, progress tracking, and AI-assisted study sessions.
           </div>
         </div>
         <div class="footer-caption footer-tech">
@@ -29,3 +29,4 @@
 <script setup>
 import Navbar from './components/Navbar.vue'
 </script>
+

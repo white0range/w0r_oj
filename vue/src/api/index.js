@@ -1,4 +1,4 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 import {
   normalizeLeaderboardItem,
   normalizeProblem,
@@ -25,7 +25,7 @@ function unwrapData(payload) {
   return payload?.data ?? payload
 }
 
-export function getErrorMessage(error, fallback = '请求失败') {
+export function getErrorMessage(error, fallback = 'Request failed') {
   return error?.response?.data?.message || error?.response?.data?.error || fallback
 }
 
@@ -114,7 +114,7 @@ api.interceptors.response.use(
 
 export async function registerUser(payload) {
   const body = getBody(await api.post('/register', payload))
-  return { message: body.message || '注册成功' }
+  return { message: body.message || 'Register succeeded' }
 }
 
 export async function loginUser(payload) {
@@ -123,7 +123,7 @@ export async function loginUser(payload) {
 
   return {
     accessToken: data.access_token || '',
-    message: body.message || '登录成功',
+    message: body.message || 'Login succeeded',
   }
 }
 
@@ -171,7 +171,7 @@ export async function submitCode(payload) {
   return {
     submissionId: Number(data.submission_id || 0),
     status: data.status || 'Pending',
-    message: body.message || '提交成功',
+    message: body.message || 'Submit succeeded',
   }
 }
 
@@ -203,6 +203,38 @@ export async function getLeaderboard() {
   }
 }
 
+export async function listStudyPlanSessions(params = {}) {
+  const body = getBody(await api.get('/study-plan/sessions', { params }))
+  const data = unwrapData(body)
+  return data.items || []
+}
+
+export async function createStudyPlanSession(payload = {}) {
+  const body = getBody(await api.post('/study-plan/sessions', payload))
+  return unwrapData(body)
+}
+
+export async function getStudyPlanSession(id) {
+  const body = getBody(await api.get(`/study-plan/sessions/${id}`))
+  return unwrapData(body)
+}
+
+export async function getStudyPlanMessages(sessionId, params = {}) {
+  const body = getBody(await api.get(`/study-plan/sessions/${sessionId}/messages`, { params }))
+  const data = unwrapData(body)
+  return data.items || []
+}
+
+export async function sendStudyPlanMessage(sessionId, payload) {
+  const body = getBody(await api.post(`/study-plan/sessions/${sessionId}/messages`, payload))
+  return unwrapData(body)
+}
+
+export async function getStudyPlanTurn(id) {
+  const body = getBody(await api.get(`/study-plan/turns/${id}`))
+  return unwrapData(body)
+}
+
 export async function createStudyPlanTask(payload) {
   const body = getBody(await api.post('/study-plan/tasks', payload))
   const data = unwrapData(body)
@@ -211,7 +243,7 @@ export async function createStudyPlanTask(payload) {
     taskId: Number(data.task_id || 0),
     status: data.status || 'pending',
     goal: data.goal || '',
-    message: body.message || '训练计划任务已创建',
+    message: body.message || 'Study plan task created',
   }
 }
 
@@ -252,18 +284,18 @@ export async function adminCreateProblem(payload) {
 
   return {
     problemId: Number(data.problem_id || 0),
-    message: body.message || '创建成功',
+    message: body.message || 'Create problem succeeded',
   }
 }
 
 export async function adminUpdateProblem(id, payload) {
   const body = getBody(await api.put(`/admin/problems/${id}`, payload))
-  return { message: body.message || '更新成功' }
+  return { message: body.message || 'Update problem succeeded' }
 }
 
 export async function adminDeleteProblem(id) {
   const body = getBody(await api.delete(`/admin/problems/${id}`))
-  return { message: body.message || '删除成功' }
+  return { message: body.message || 'Delete problem succeeded' }
 }
 
 export async function adminGetTestCases(id, params = {}) {
@@ -284,13 +316,13 @@ export async function adminAddTestCase(id, payload) {
 
   return {
     caseId: Number(data.case_id || 0),
-    message: body.message || '测试用例已添加',
+    message: body.message || 'Add test case succeeded',
   }
 }
 
 export async function adminDeleteTestCase(caseId) {
   const body = getBody(await api.delete(`/admin/problems/cases/${caseId}`))
-  return { message: body.message || '测试用例已删除' }
+  return { message: body.message || 'Delete test case succeeded' }
 }
 
 export async function adminCreateTag(payload) {
@@ -298,18 +330,18 @@ export async function adminCreateTag(payload) {
 
   return {
     tag: normalizeTag(unwrapData(body)),
-    message: body.message || '标签已创建',
+    message: body.message || 'Create tag succeeded',
   }
 }
 
 export async function adminDeleteTag(id) {
   const body = getBody(await api.delete(`/admin/tags/${id}`))
-  return { message: body.message || '标签已删除' }
+  return { message: body.message || 'Delete tag succeeded' }
 }
 
 export async function adminUpdateProblemTags(id, payload) {
   const body = getBody(await api.put(`/admin/problems/${id}/tags`, payload))
-  return { message: body.message || '标签已更新' }
+  return { message: body.message || 'Update tags succeeded' }
 }
 
 export default api
