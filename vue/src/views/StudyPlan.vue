@@ -1,203 +1,193 @@
 ﻿<template>
-  <div class="study-shell">
-    <header class="study-header">
-      <div class="study-header-copy">
-        <span class="section-kicker">AI Study Assistant</span>
-        <h1>AI 学习助手</h1>
-        <p>围绕刷题计划、算法问题和题目检索做连续对话，历史上下文会自动保留在当前会话里。</p>
-      </div>
-      <div class="study-header-meta">
-        <span class="pill">{{ sessionStatusLabel }}</span>
-        <span class="pill" :class="streamBadgeClass">{{ streamLabel }}</span>
-        <span v-if="currentTurn?.id" class="pill">Turn #{{ currentTurn.id }}</span>
-      </div>
-    </header>
-
-    <section class="study-console">
-      <aside class="study-sidebar">
-        <div class="sidebar-head">
-          <div>
-            <span class="section-kicker">Sessions</span>
-            <h2>会话</h2>
-          </div>
-          <div class="cluster sidebar-actions">
-            <button class="btn btn-primary btn-sm" :disabled="creatingSession" @click="handleCreateSession">
-              <span v-if="creatingSession" class="spinner"></span>
-              <span v-else>新建</span>
-            </button>
-            <button class="btn btn-outline btn-sm" :disabled="loadingSessions" @click="loadSessions(true)">
-              <span v-if="loadingSessions" class="spinner spinner-dark"></span>
-              <span v-else>刷新</span>
-            </button>
-          </div>
+  <div class="chat-shell">
+    <aside class="chat-sidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <span class="sidebar-kicker">AI Study Assistant</span>
+          <h1>学习计划</h1>
+          <p>围绕刷题、算法问题和题目检索做连续对话。</p>
         </div>
 
-        <div v-if="sessionMessage" class="auth-message" :class="sessionMessageType === 'error' ? 'auth-error' : 'auth-success'">
+        <div class="sidebar-toolbar">
+          <button class="sidebar-primary" :disabled="creatingSession" @click="handleCreateSession">
+            <span v-if="creatingSession" class="spinner"></span>
+            <span v-else>新建会话</span>
+          </button>
+          <button class="sidebar-secondary" :disabled="loadingSessions" @click="loadSessions(true)">
+            <span v-if="loadingSessions" class="spinner spinner-dark"></span>
+            <span v-else>刷新</span>
+          </button>
+        </div>
+
+        <div v-if="sessionMessage" class="sidebar-alert" :class="sessionMessageType === 'error' ? 'sidebar-alert-error' : 'sidebar-alert-success'">
           {{ sessionMessage }}
         </div>
+      </div>
 
-        <div class="session-list">
-          <template v-if="sessions.length">
-            <button
-              v-for="session in sessions"
-              :key="session.id"
-              class="session-item"
-              :class="{ active: session.id === activeSessionId }"
-              @click="selectSession(session.id)"
-            >
-              <div class="session-item-head">
-                <strong>{{ sessionTitle(session) }}</strong>
-                <span class="session-id">#{{ session.id }}</span>
+      <div class="session-scroll">
+        <div v-if="sessions.length" class="session-stack">
+          <button
+            v-for="session in sessions"
+            :key="session.id"
+            class="session-row"
+            :class="{ active: session.id === activeSessionId }"
+            @click="selectSession(session.id)"
+          >
+            <div class="session-row-head">
+              <strong>{{ sessionTitle(session) }}</strong>
+              <span>#{{ session.id }}</span>
+            </div>
+            <span class="session-row-time">{{ formatDate(session.last_message_at || session.updated_at || session.created_at) }}</span>
+            <span v-if="session.summary_text" class="session-row-memory">已生成摘要记忆</span>
+          </button>
+        </div>
+
+        <div v-else class="sidebar-empty">
+          <strong>还没有会话</strong>
+          <p>创建一个新会话，开始记录你的问题和训练过程。</p>
+        </div>
+      </div>
+    </aside>
+
+    <section class="chat-main">
+      <header class="chat-main-header">
+        <div class="chat-main-copy">
+          <span class="chat-main-kicker">Conversation</span>
+          <h2>{{ activeSession ? sessionTitle(activeSession) : '新的对话' }}</h2>
+          <p>{{ sessionStatusDescription }}</p>
+        </div>
+
+        <div class="chat-main-meta">
+          <span class="meta-pill">{{ activeSession ? `Session #${activeSession.id}` : '未选择会话' }}</span>
+          <span class="meta-pill" :class="streamBadgeClass">{{ streamLabel }}</span>
+          <span v-if="currentTurn?.id" class="meta-pill">Turn #{{ currentTurn.id }}</span>
+          <button class="danger-pill" :disabled="deletingSession || !activeSessionId || turnPending" @click="handleDeleteSession">
+            <span v-if="deletingSession" class="spinner spinner-dark"></span>
+            <span v-else>删除会话</span>
+          </button>
+        </div>
+      </header>
+
+      <div v-if="activeSession?.summary_text" class="memory-strip">
+        <div class="memory-strip-head">
+          <span>Session Memory</span>
+          <small>系统摘要</small>
+        </div>
+        <p>{{ activeSession.summary_text }}</p>
+      </div>
+
+      <div ref="messageListRef" class="chat-thread">
+        <template v-if="normalizedMessages.length">
+          <article
+            v-for="message in normalizedMessages"
+            :key="message.id"
+            class="message-item"
+            :class="message.role === 'user' ? 'message-item-user' : 'message-item-assistant'"
+          >
+            <div class="message-avatar" :class="message.role === 'user' ? 'message-avatar-user' : 'message-avatar-assistant'">
+              {{ message.role === 'user' ? '你' : 'AI' }}
+            </div>
+
+            <div class="message-card" :class="message.role === 'user' ? 'message-card-user' : 'message-card-assistant'">
+              <div class="message-head">
+                <strong>{{ message.role === 'user' ? '你' : '学习助手' }}</strong>
+                <span>{{ formatDate(message.created_at) }}</span>
               </div>
-              <span class="session-time">{{ formatDate(session.last_message_at || session.updated_at || session.created_at) }}</span>
-              <span v-if="session.summary_text" class="session-memory">已生成摘要记忆</span>
-            </button>
-          </template>
 
-          <div v-else class="empty-state compact-state">
-            <strong>还没有会话</strong>
-            <span class="muted">创建一个会话，开始记录你的训练过程和问题。</span>
-          </div>
-        </div>
-      </aside>
+              <div class="message-content">
+                <template v-if="message.role === 'assistant' && message.parsed">
+                  <div class="message-text assistant-summary">
+                    {{ message.parsed.study_plan_summary || message.content }}
+                  </div>
 
-      <section class="study-stage">
-        <div class="stage-topbar">
-          <div>
-            <h2>{{ activeSession ? sessionTitle(activeSession) : '新的对话' }}</h2>
-            <p>{{ sessionStatusDescription }}</p>
-          </div>
-          <div class="stage-pills">
-            <span class="pill">{{ activeSession ? `Session #${activeSession.id}` : '未选择会话' }}</span>
-            <span v-if="activeSession?.status" class="pill">{{ activeSession.status }}</span>
-          </div>
-        </div>
-
-        <div v-if="activeSession?.summary_text" class="memory-banner">
-          <div class="memory-head">
-            <span class="section-kicker">Session Memory</span>
-            <span class="memory-label">系统摘要</span>
-          </div>
-          <p>{{ activeSession.summary_text }}</p>
-        </div>
-
-        <div ref="messageListRef" class="message-scroll">
-          <template v-if="normalizedMessages.length">
-            <article
-              v-for="message in normalizedMessages"
-              :key="message.id"
-              class="message-row"
-              :class="message.role === 'user' ? 'message-row-user' : 'message-row-assistant'"
-            >
-              <div class="message-avatar" :class="message.role === 'user' ? 'message-avatar-user' : 'message-avatar-assistant'">
-                {{ message.role === 'user' ? '你' : 'AI' }}
-              </div>
-
-              <div class="message-bubble" :class="message.role === 'user' ? 'message-bubble-user' : 'message-bubble-assistant'">
-                <div class="message-meta">
-                  <strong>{{ message.role === 'user' ? '你' : '学习助手' }}</strong>
-                  <span>{{ formatDate(message.created_at) }}</span>
-                </div>
-
-                <div class="message-body">
-                  <template v-if="message.role === 'assistant' && message.parsed">
-                    <div class="message-text assistant-summary">
-                      {{ message.parsed.study_plan_summary || message.content }}
+                  <div v-if="message.parsed.weak_tags.length" class="assistant-block">
+                    <span class="assistant-label">薄弱标签</span>
+                    <div class="assistant-tag-row">
+                      <span v-for="tag in message.parsed.weak_tags" :key="`${message.id}-${tag}`" class="assistant-tag">{{ tag }}</span>
                     </div>
+                  </div>
 
-                    <div v-if="message.parsed.weak_tags.length" class="assistant-section">
-                      <span class="assistant-label">薄弱标签</span>
-                      <div class="cluster">
-                        <span v-for="tag in message.parsed.weak_tags" :key="`${message.id}-${tag}`" class="pill weak-pill">{{ tag }}</span>
-                      </div>
-                    </div>
-
-                    <div v-if="message.parsed.recommended_problems.length" class="assistant-section">
-                      <span class="assistant-label">推荐题目</span>
-                      <div class="recommend-grid">
-                        <router-link
-                          v-for="problem in message.parsed.recommended_problems"
-                          :key="`${message.id}-${problem.problem_id}`"
-                          :to="`/problems/${problem.problem_id}`"
-                          class="recommend-card"
-                        >
-                          <span class="mini-tag">#{{ problem.problem_id }}</span>
+                  <div v-if="message.parsed.recommended_problems.length" class="assistant-block">
+                    <span class="assistant-label">推荐题目</span>
+                    <div class="recommend-list">
+                      <router-link
+                        v-for="problem in message.parsed.recommended_problems"
+                        :key="`${message.id}-${problem.problem_id}`"
+                        :to="`/problems/${problem.problem_id}`"
+                        class="recommend-item"
+                      >
+                        <div class="recommend-item-head">
+                          <span class="recommend-id">#{{ problem.problem_id }}</span>
                           <strong>{{ problem.title }}</strong>
-                          <p>{{ problem.reason }}</p>
-                          <span class="recommend-link">进入题目</span>
-                        </router-link>
-                      </div>
+                        </div>
+                        <p>{{ problem.reason }}</p>
+                        <span class="recommend-enter">查看题目</span>
+                      </router-link>
                     </div>
-                  </template>
+                  </div>
+                </template>
 
-                  <template v-else>
-                    <div class="message-text">{{ message.content }}</div>
-                  </template>
-                </div>
+                <template v-else>
+                  <div class="message-text">{{ message.content }}</div>
+                </template>
               </div>
-            </article>
-          </template>
+            </div>
+          </article>
+        </template>
 
-          <div v-else-if="loadingMessages" class="loading-state inline-state">
-            <span class="spinner spinner-dark"></span>
-            <span class="muted">正在加载会话消息...</span>
+        <div v-else-if="loadingMessages" class="thread-state">
+          <span class="spinner spinner-dark"></span>
+          <span>正在加载会话消息...</span>
+        </div>
+
+        <div v-else class="thread-welcome">
+          <div class="thread-welcome-copy">
+            <span>准备开始</span>
+            <h3>像聊天一样规划你的刷题节奏</h3>
+            <p>可以直接问算法问题、回忆模糊题目，或者让助手给你安排下一轮训练。</p>
           </div>
 
-          <div v-else class="welcome-panel">
-            <div class="welcome-copy">
-              <span class="section-kicker">开始对话</span>
-              <h3>开始一段新的学习对话</h3>
-              <p>可以直接问算法问题、回忆模糊题目，或者让助手帮你规划下一轮训练。</p>
-            </div>
-            <div class="prompt-grid">
-              <button
-                v-for="preset in promptPresets"
-                :key="preset"
-                class="prompt-card"
-                @click="draft = preset"
-              >
-                {{ preset }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="turnPending" class="assistant-pending">
-            <div class="message-avatar message-avatar-assistant">AI</div>
-            <div class="pending-bubble">
-              <strong>正在生成回复</strong>
-              <span>{{ streamMessage || '完成后会自动写入当前会话。' }}</span>
-            </div>
+          <div class="prompt-grid">
+            <button v-for="preset in promptPresets" :key="preset" class="prompt-chip" @click="draft = preset">
+              {{ preset }}
+            </button>
           </div>
         </div>
 
-        <div class="composer-shell">
-          <div v-if="messageError" class="auth-message auth-error">{{ messageError }}</div>
-
-          <textarea
-            id="study-chat-input"
-            v-model.trim="draft"
-            class="textarea composer-input"
-            placeholder="输入你的问题，例如：我最近图论建模总是卡住，先帮我分析问题，再给我安排一轮练习。"
-            @keydown.enter.exact.prevent="handleSendMessage"
-          ></textarea>
-
-          <div class="composer-footer">
-            <div class="composer-hints">
-              <span>{{ sessionStatusDescription }}</span>
-            </div>
-            <div class="cluster composer-actions">
-              <button class="btn btn-outline" :disabled="loadingMessages || !activeSessionId" @click="reloadActiveSession">
-                <span v-if="loadingMessages" class="spinner spinner-dark"></span>
-                <span v-else>刷新消息</span>
-              </button>
-              <button class="btn btn-primary" :disabled="sending || !draft.trim()" @click="handleSendMessage">
-                <span v-if="sending" class="spinner"></span>
-                <span v-else>发送</span>
-              </button>
-            </div>
+        <div v-if="turnPending" class="message-item message-item-assistant pending-row">
+          <div class="message-avatar message-avatar-assistant">AI</div>
+          <div class="message-card message-card-assistant pending-card">
+            <strong>正在生成回复</strong>
+            <span>{{ streamMessage || '完成后会自动写入当前会话。' }}</span>
           </div>
         </div>
-      </section>
+      </div>
+
+      <div class="composer-shell">
+        <div v-if="messageError" class="composer-alert">{{ messageError }}</div>
+
+        <textarea
+          id="study-chat-input"
+          v-model.trim="draft"
+          class="composer-input"
+          placeholder="输入你的问题，例如：我最近图论建模总是卡住，先帮我分析问题，再给我安排一轮练习。"
+          @keydown.enter.exact.prevent="handleSendMessage"
+        ></textarea>
+
+        <div class="composer-footer">
+          <span class="composer-hint">{{ sessionStatusDescription }}</span>
+          <div class="composer-actions">
+            <button class="sidebar-secondary" :disabled="loadingMessages || !activeSessionId" @click="reloadActiveSession">
+              <span v-if="loadingMessages" class="spinner spinner-dark"></span>
+              <span v-else>刷新消息</span>
+            </button>
+            <button class="sidebar-primary" :disabled="sending || !draft.trim()" @click="handleSendMessage">
+              <span v-if="sending" class="spinner"></span>
+              <span v-else>发送</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -207,6 +197,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createStudyPlanSession,
+  deleteStudyPlanSession,
   getErrorMessage,
   getStudyPlanMessages,
   getStudyPlanTurn,
@@ -236,6 +227,7 @@ const draft = ref('')
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
 const creatingSession = ref(false)
+const deletingSession = ref(false)
 const sending = ref(false)
 const sessionMessage = ref('')
 const sessionMessageType = ref('success')
@@ -255,19 +247,6 @@ const normalizedMessages = computed(() => messages.value.map((message) => ({
 })))
 
 const turnPending = computed(() => ACTIVE_TURN_STATUSES.includes(currentTurn.value?.status || ''))
-
-const sessionStatusLabel = computed(() => {
-  if (turnPending.value) {
-    return '回复生成中'
-  }
-  if (activeSession.value) {
-    return '会话已就绪'
-  }
-  if (sessions.value.length) {
-    return '等待选择会话'
-  }
-  return '尚未开始'
-})
 
 const sessionStatusDescription = computed(() => {
   if (turnPending.value) {
@@ -297,14 +276,14 @@ const streamLabel = computed(() => {
 const streamBadgeClass = computed(() => {
   switch (streamState.value) {
     case 'connected':
-      return 'stream-pill stream-pill-live'
+      return 'meta-pill-live'
     case 'connecting':
     case 'reconnecting':
-      return 'stream-pill stream-pill-warn'
+      return 'meta-pill-warn'
     case 'error':
-      return 'stream-pill stream-pill-error'
+      return 'meta-pill-error'
     default:
-      return 'stream-pill'
+      return ''
   }
 })
 
@@ -424,9 +403,7 @@ async function loadSessions(showMessage = false, preferredSessionId = 0) {
       activeSessionId.value = 0
     }
 
-    if (activeSessionId.value > 0) {
-      persistSessionId(activeSessionId.value)
-    }
+    persistSessionId(activeSessionId.value)
 
     if (showMessage) {
       sessionMessage.value = '会话列表已刷新。'
@@ -583,6 +560,46 @@ function connectTurnStream(turnId) {
   }
 }
 
+async function handleDeleteSession() {
+  if (!activeSessionId.value) {
+    return
+  }
+  if (turnPending.value) {
+    sessionMessage.value = '当前会话还有一条回复在生成，暂时不能删除。'
+    sessionMessageType.value = 'error'
+    return
+  }
+  if (!window.confirm('删除当前会话后，它会从列表中隐藏。确认继续吗？')) {
+    return
+  }
+
+  deletingSession.value = true
+  sessionMessage.value = ''
+  messageError.value = ''
+
+  try {
+    const deletingSessionId = activeSessionId.value
+    closeTurnStream()
+    await deleteStudyPlanSession(deletingSessionId)
+    messages.value = []
+    currentTurn.value = null
+    draft.value = ''
+
+    await loadSessions(false)
+    if (activeSessionId.value > 0) {
+      await loadMessages(activeSessionId.value)
+    }
+
+    sessionMessage.value = '会话已删除。'
+    sessionMessageType.value = 'success'
+  } catch (error) {
+    sessionMessage.value = getErrorMessage(error, '删除会话失败。')
+    sessionMessageType.value = 'error'
+  } finally {
+    deletingSession.value = false
+  }
+}
+
 async function handleCreateSession() {
   creatingSession.value = true
   sessionMessage.value = ''
@@ -649,266 +666,414 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.study-shell {
+.chat-shell {
   display: grid;
-  gap: 18px;
+  grid-template-columns: 308px minmax(0, 1fr);
+  gap: 0;
+  height: calc(100vh - 132px);
+  max-height: calc(100vh - 132px);
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
+    linear-gradient(180deg, #f7f9fc 0%, #f4f7fb 100%);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.12);
 }
 
-.study-header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 6px 4px 2px;
-}
-
-.study-header-copy {
+.chat-sidebar {
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 18px 14px 18px 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(12, 18, 31, 0.98) 0%, rgba(17, 24, 39, 0.97) 100%);
+  color: #eef2ff;
 }
 
-.study-header-copy h1 {
+.sidebar-top {
+  display: grid;
+  gap: 14px;
+  padding: 4px 4px 16px;
+}
+
+.sidebar-brand {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.82);
+}
+
+.sidebar-brand h1 {
   margin: 0;
-  font-size: clamp(32px, 4vw, 46px);
+  font-size: 28px;
   letter-spacing: -0.05em;
 }
 
-.study-header-copy p {
+.sidebar-brand p {
   margin: 0;
-  color: var(--ink-soft);
-  max-width: 760px;
+  color: rgba(226, 232, 240, 0.7);
+  line-height: 1.6;
 }
 
-.study-header-meta {
+.sidebar-toolbar {
+  display: flex;
+  gap: 10px;
+}
+
+.sidebar-primary,
+.sidebar-secondary,
+.danger-pill,
+.prompt-chip,
+.session-row,
+.recommend-item {
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), background var(--transition), color var(--transition);
+}
+
+.sidebar-primary,
+.sidebar-secondary,
+.danger-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sidebar-primary {
+  border: 1px solid rgba(59, 130, 246, 0.52);
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  color: #f8fbff;
+  box-shadow: 0 16px 32px rgba(37, 99, 235, 0.22);
+}
+
+.sidebar-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.sidebar-secondary {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+}
+
+.sidebar-secondary:hover:not(:disabled) {
+  border-color: rgba(148, 163, 184, 0.48);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-alert {
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sidebar-alert-success {
+  background: rgba(22, 163, 74, 0.16);
+  color: #bbf7d0;
+}
+
+.sidebar-alert-error {
+  background: rgba(220, 38, 38, 0.16);
+  color: #fecaca;
+}
+
+.session-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.session-stack {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.session-row {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 14px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef2ff;
+}
+
+.session-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.28);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.session-row.active {
+  border-color: rgba(96, 165, 250, 0.44);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(59, 130, 246, 0.14));
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.1);
+}
+
+.session-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-row-head strong {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.session-row-head span,
+.session-row-time,
+.session-row-memory {
+  color: rgba(191, 219, 254, 0.72);
+}
+
+.session-row-head span,
+.session-row-memory {
+  font-size: 12px;
+}
+
+.session-row-time {
+  font-size: 13px;
+}
+
+.session-row-memory {
+  font-weight: 700;
+}
+
+.sidebar-empty {
+  display: grid;
+  gap: 8px;
+  padding: 20px 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-empty strong {
+  color: #f8fafc;
+}
+
+.sidebar-empty p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.68);
+  line-height: 1.6;
+}
+
+.chat-main {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 0;
+  height: 100%;
+  padding: 18px 22px 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.74) 0%, rgba(248, 250, 252, 0.96) 100%);
+  overflow: hidden;
+}
+
+.chat-main-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 4px 0 14px;
+}
+
+.chat-main-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-main-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.chat-main-copy h2 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.05em;
+}
+
+.chat-main-copy p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.chat-main-meta {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+  max-width: 420px;
 }
 
-.study-console {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 18px;
-  min-height: 76vh;
-}
-
-.study-sidebar,
-.study-stage {
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: var(--shadow-md);
-}
-
-.study-sidebar {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px;
-}
-
-.sidebar-head {
-  display: grid;
-  gap: 12px;
-}
-
-.sidebar-head h2,
-.stage-topbar h2,
-.welcome-copy h3 {
-  margin: 6px 0 0;
-  font-size: 24px;
-  letter-spacing: -0.04em;
-}
-
-.sidebar-actions {
-  gap: 8px;
-}
-
-.session-list {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
-  max-height: calc(76vh - 120px);
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.session-item {
-  display: grid;
-  gap: 8px;
-  text-align: left;
-  padding: 14px 16px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  border-radius: 18px;
-  background: rgba(245, 248, 255, 0.82);
-  transition: transform var(--transition), border-color var(--transition), background var(--transition), box-shadow var(--transition);
-}
-
-.session-item:hover {
-  transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.22);
-  box-shadow: var(--shadow-sm);
-}
-
-.session-item.active {
-  border-color: rgba(37, 99, 235, 0.28);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(59, 130, 246, 0.05));
-}
-
-.session-item-head {
-  display: flex;
+.meta-pill {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.session-id,
-.session-time,
-.session-memory,
-.stage-topbar p,
-.memory-label,
-.message-meta span,
-.composer-hints {
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
   color: var(--ink-soft);
-}
-
-.session-id,
-.session-memory {
-  font-size: 12px;
-}
-
-.session-time {
   font-size: 13px;
-}
-
-.session-memory {
   font-weight: 700;
 }
 
-.study-stage {
+.meta-pill-live {
+  border-color: rgba(13, 148, 136, 0.2);
+  background: rgba(20, 184, 166, 0.1);
+  color: #0f766e;
+}
+
+.meta-pill-warn {
+  border-color: rgba(217, 119, 6, 0.2);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.meta-pill-error {
+  border-color: rgba(220, 38, 38, 0.16);
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+.danger-pill {
+  border: 1px solid rgba(220, 38, 38, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+  color: #b91c1c;
+}
+
+.danger-pill:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(254, 242, 242, 0.96);
+}
+
+.memory-strip {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 16px;
-  padding: 18px;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
 }
 
-.stage-topbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 4px 2px 0;
-}
-
-.stage-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.memory-banner {
-  display: grid;
-  gap: 10px;
-  padding: 16px 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  background: linear-gradient(135deg, rgba(15, 23, 40, 0.035), rgba(37, 99, 235, 0.045));
-}
-
-.memory-head {
+.memory-strip-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.memory-banner p {
-  margin: 0;
-  white-space: pre-wrap;
   color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-.message-scroll {
+.memory-strip p {
+  margin: 0;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.chat-thread {
+  min-height: 0;
+  overflow: auto;
   display: grid;
   align-content: start;
   gap: 18px;
-  min-height: 0;
-  max-height: calc(76vh - 260px);
-  overflow: auto;
-  padding: 4px 6px 4px 2px;
+  padding: 6px 4px 20px;
+  overscroll-behavior: contain;
 }
 
-.message-row,
-.assistant-pending {
+.message-item {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
+  width: min(100%, 920px);
 }
 
-.message-row-user {
-  grid-template-columns: minmax(0, 1fr) 44px;
+.message-item-user {
+  justify-self: end;
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 
-.message-row-user .message-avatar {
+.message-item-user .message-avatar {
   order: 2;
 }
 
-.message-row-user .message-bubble {
+.message-item-user .message-card {
   order: 1;
-  justify-self: end;
 }
 
 .message-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 14px;
   font-size: 13px;
   font-weight: 800;
 }
 
 .message-avatar-user {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.98), rgba(29, 78, 216, 0.82));
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #f8fbff;
 }
 
 .message-avatar-assistant {
-  background: rgba(15, 23, 40, 0.08);
+  background: rgba(15, 23, 42, 0.08);
   color: var(--ink);
 }
 
-.message-bubble,
-.pending-bubble {
+.message-card {
   display: grid;
   gap: 12px;
-  width: min(100%, 860px);
   padding: 16px 18px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
   border-radius: 24px;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.message-bubble-user {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.88));
+.message-card-assistant {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.message-card-user {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #f8fbff;
+  box-shadow: 0 16px 36px rgba(37, 99, 235, 0.2);
 }
 
-.message-bubble-user .message-meta span,
-.message-bubble-user .message-text {
-  color: rgba(248, 251, 255, 0.82);
+.message-card-user .message-head span,
+.message-card-user .message-text {
+  color: rgba(248, 251, 255, 0.84);
 }
 
-.message-bubble-assistant,
-.pending-bubble {
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.message-meta {
+.message-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -916,15 +1081,19 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.message-body,
-.assistant-section {
+.message-head span {
+  color: var(--ink-soft);
+}
+
+.message-content,
+.assistant-block {
   display: grid;
   gap: 12px;
 }
 
 .message-text {
   white-space: pre-wrap;
-  line-height: 1.75;
+  line-height: 1.8;
 }
 
 .assistant-summary {
@@ -932,60 +1101,126 @@ onUnmounted(() => {
 }
 
 .assistant-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-.recommend-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+.assistant-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.recommend-card {
+.assistant-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.recommend-list {
   display: grid;
+  gap: 12px;
+}
+
+.recommend-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(245, 248, 255, 0.84);
+}
+
+.recommend-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.2);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
+.recommend-item-head {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  background: rgba(245, 248, 255, 0.92);
-  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
 }
 
-.recommend-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow: var(--shadow-sm);
+.recommend-id {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 800;
 }
 
-.recommend-card p {
+.recommend-item p {
   margin: 0;
   color: var(--ink-soft);
+  line-height: 1.6;
 }
 
-.recommend-link {
+.recommend-enter {
   color: var(--brand-deep);
-  font-weight: 800;
+  font-weight: 700;
 }
 
-.welcome-panel {
+.thread-state,
+.thread-welcome {
+  width: min(100%, 920px);
+  justify-self: center;
+}
+
+.thread-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  color: var(--ink-soft);
+}
+
+.thread-welcome {
   display: grid;
-  gap: 20px;
-  padding: 24px;
-  border: 1px dashed rgba(15, 23, 40, 0.16);
+  gap: 18px;
+  padding: 26px;
+  border: 1px dashed rgba(15, 23, 42, 0.12);
   border-radius: 24px;
-  background: rgba(248, 250, 255, 0.82);
+  background: rgba(255, 255, 255, 0.62);
 }
 
-.welcome-copy {
+.thread-welcome-copy {
   display: grid;
   gap: 8px;
 }
 
-.welcome-copy p {
+.thread-welcome-copy span {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.thread-welcome-copy h3 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+
+.thread-welcome-copy p {
   margin: 0;
   color: var(--ink-soft);
+  line-height: 1.7;
 }
 
 .prompt-grid {
@@ -994,46 +1229,71 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.prompt-card {
+.prompt-chip {
   text-align: left;
   padding: 16px 18px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
   color: var(--ink);
   font-weight: 600;
-  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
 
-.prompt-card:hover {
+.prompt-chip:hover {
   transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow: var(--shadow-sm);
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
 }
 
-.assistant-pending {
-  align-items: center;
+.pending-row {
+  justify-self: start;
 }
 
-.pending-bubble strong {
+.pending-card strong {
   font-size: 15px;
 }
 
-.pending-bubble span {
+.pending-card span {
   color: var(--ink-soft);
 }
 
 .composer-shell {
   display: grid;
   gap: 12px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(15, 23, 40, 0.08);
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.94) 26%);
+  flex-shrink: 0;
+}
+
+.composer-alert {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+  font-size: 13px;
 }
 
 .composer-input {
-  min-height: 118px;
-  border-radius: 22px;
+  width: 100%;
+  min-height: 112px;
+  max-height: 160px;
+  padding: 18px 20px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 24px;
   background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  font: inherit;
+  resize: none;
+  overflow: auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.composer-input:focus {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.28);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
 }
 
 .composer-footer {
@@ -1044,92 +1304,91 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.composer-hints {
+.composer-hint {
+  color: var(--ink-soft);
   font-size: 13px;
 }
 
 .composer-actions {
+  display: flex;
+  gap: 10px;
   justify-content: flex-end;
 }
 
-.inline-state {
-  justify-items: start;
-  padding: 18px;
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
-.weak-pill {
-  background: rgba(217, 119, 6, 0.12);
-  color: var(--warning);
+@media (max-width: 1180px) {
+  .chat-shell {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
 }
 
-.stream-pill {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.stream-pill-live {
-  background: rgba(15, 118, 110, 0.12);
-  color: #0f766e;
-}
-
-.stream-pill-warn {
-  background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
-}
-
-.stream-pill-error {
-  background: rgba(220, 38, 38, 0.12);
-  color: #b91c1c;
-}
-
-.compact-state {
-  padding: 24px 16px;
-}
-
-@media (max-width: 1100px) {
-  .study-console {
+@media (max-width: 980px) {
+  .chat-shell {
     grid-template-columns: 1fr;
-  }
-
-  .session-list {
+    height: auto;
     max-height: none;
   }
 
-  .message-scroll {
-    max-height: none;
+  .chat-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .session-scroll {
+    max-height: 260px;
   }
 }
 
 @media (max-width: 760px) {
-  .study-header,
-  .stage-topbar,
-  .composer-footer,
-  .memory-head {
-    grid-template-columns: 1fr;
+  .chat-shell {
+    min-height: calc(100vh - 96px);
+  }
+
+  .chat-main,
+  .chat-sidebar {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .chat-main-header,
+  .composer-footer {
     display: grid;
     align-items: start;
   }
 
-  .message-row,
-  .assistant-pending,
-  .message-row-user {
+  .chat-main-meta {
+    justify-content: flex-start;
+  }
+
+  .message-item,
+  .message-item-user,
+  .pending-row {
     grid-template-columns: 1fr;
-  }
-
-  .message-row-user .message-avatar,
-  .message-row-user .message-bubble {
-    order: initial;
-  }
-
-  .message-bubble,
-  .pending-bubble {
     width: 100%;
+  }
+
+  .message-item-user .message-avatar,
+  .message-item-user .message-card {
+    order: initial;
   }
 
   .message-avatar {
     width: 38px;
     height: 38px;
   }
+
+  .message-card {
+    border-radius: 20px;
+  }
+
+  .prompt-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
-
-

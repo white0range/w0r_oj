@@ -1,4 +1,4 @@
-# Copy this file to config.dev.yaml / config.test.yaml / config.prod.yaml
+﻿# Copy this file to config.dev.yaml / config.test.yaml / config.prod.yaml
 # and fill in the values for the target environment.
 
 app:
@@ -36,6 +36,7 @@ elasticsearch:
 
 judge:
   worker_count: 3
+  compile_timeout_seconds: 45
 
 study_plan:
   worker_count: 3

@@ -1,20 +1,19 @@
 package app
 
 import (
-	analysisHandler "gojo/internal/analysis/handler"
-	middlewares2 "gojo/internal/app/middlewares"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+
+	analysisHandler "gojo/internal/analysis/handler"
+	middlewares2 "gojo/internal/app/middlewares"
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	problemHandler "gojo/internal/problem/handler"
 	studyPlanHandler "gojo/internal/study_plan/handler"
 	subHandler "gojo/internal/submission/handler"
 	userHandler "gojo/internal/user/handler"
-
-	"github.com/gin-gonic/gin"
 )
 
-// SetupRouter 负责配置所有的 API 路由地址
 func SetupRouter(
 	uHandler *userHandler.UserHandler,
 	pHandler *problemHandler.ProblemHandler,
@@ -28,13 +27,10 @@ func SetupRouter(
 ) *gin.Engine {
 	r := gin.Default()
 
-	// ====================
-	// 公共区域：不需要手环谁都能进
-	// ====================
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "success",
-			"message": "欢迎来到我的 OJ 平台，核心引擎运转正常！",
+			"message": "welcome to gojo oj",
 		})
 	})
 
@@ -45,21 +41,13 @@ func SetupRouter(
 
 	r.GET("/api/problems", pHandler.GetProblemList)
 	r.GET("/api/problems/:id", pHandler.GetProblemDetail)
-
 	r.GET("/api/tags", tHandler.GetTagList)
 	r.GET("/api/leaderboard", middlewares2.OptionalAuth(), lHandler.GetGlobalLeaderboard)
-
 	r.POST("/api/problems/search", searchHandler.SearchProblems)
 
-	// ====================
-	// 核心区域：必须通过安检 (使用中间件)
-	// ====================
 	protected := r.Group("/api")
 	protected.Use(middlewares2.AuthMiddleware())
 	{
-		// ==========================================
-		// 👑 皇家禁地：管理员专属操作台
-		// ==========================================
 		adminGroup := protected.Group("/admin")
 		adminGroup.Use(middlewares2.AdminCheck())
 		{
@@ -94,11 +82,21 @@ func SetupRouter(
 		protected.GET("/my-submissions", sHandler.GetMySubmissions)
 
 		protected.GET("/ws", uHandler.ConnectWS)
-		// AI 诊断任务
+
 		protected.POST("/analysis/tasks", analysisHandler.CreateAnalysisTask)
 		protected.GET("/analysis/tasks/:id", analysisHandler.GetAnalysisTask)
 		protected.POST("/analysis/tasks/:id/feedback", analysisHandler.SubmitFeedback)
 		protected.GET("/analysis/tasks/:id/feedback", analysisHandler.GetFeedback)
+
+		protected.GET("/study-plan/sessions", spHandler.ListSessions)
+		protected.POST("/study-plan/sessions", spHandler.CreateSession)
+		protected.GET("/study-plan/sessions/:session_id", spHandler.GetSession)
+		protected.DELETE("/study-plan/sessions/:session_id", spHandler.DeleteSession)
+		protected.GET("/study-plan/sessions/:session_id/messages", spHandler.ListMessages)
+		protected.POST("/study-plan/sessions/:session_id/messages", spHandler.SendMessage)
+		protected.GET("/study-plan/turns/:turn_id", spHandler.GetTurn)
+		protected.GET("/study-plan/turns/:turn_id/stream", spHandler.StreamTurn)
+
 		protected.POST("/study-plan/tasks", spHandler.CreateTask)
 		protected.GET("/study-plan/tasks/:id/stream", spHandler.StreamTask)
 		protected.GET("/study-plan/tasks/:id", spHandler.GetTask)

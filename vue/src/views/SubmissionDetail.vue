@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page">
     <section v-if="loading" class="loading-state">
       <strong>提交详情加载中</strong>
@@ -53,12 +53,24 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getSubmission } from '../api'
+import { store } from '../store'
 
 const route = useRoute()
 const routeId = computed(() => route.params.id)
 const loading = ref(true)
 const submission = ref(null)
+
+let socket = null
 let pollTimer = null
+let socketFallbackTimer = null
+let suppressSocketFallback = false
+
+const SOCKET_FALLBACK_DELAY_MS = 4000
+const POLL_INTERVAL_MS = 2000
+
+function isPendingSubmission() {
+  return submission.value?.status === 'Pending'
+}
 
 async function fetchSubmission() {
   try {
@@ -68,26 +80,108 @@ async function fetchSubmission() {
   } finally {
     loading.value = false
   }
+
+  if (!isPendingSubmission()) {
+    stopSocketFallbackTimer()
+    stopPolling()
+    closeSocket()
+  }
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startPolling() {
+  if (!isPendingSubmission() || pollTimer) {
+    return
+  }
+
+  pollTimer = setInterval(fetchSubmission, POLL_INTERVAL_MS)
+}
+
+function stopSocketFallbackTimer() {
+  if (socketFallbackTimer) {
+    clearTimeout(socketFallbackTimer)
+    socketFallbackTimer = null
+  }
+}
+
+function closeSocket() {
+  if (socket) {
+    suppressSocketFallback = true
+    socket.close()
+    socket = null
+  }
+}
+
+function openSocket(submissionId) {
+  const token = store.token
+  if (!token) {
+    startPolling()
+    return
+  }
+
+  closeSocket()
+  stopSocketFallbackTimer()
+  suppressSocketFallback = false
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  socket = new WebSocket(`${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
+
+  socketFallbackTimer = setTimeout(() => {
+    if (socket && socket.readyState !== WebSocket.OPEN && isPendingSubmission()) {
+      startPolling()
+    }
+  }, SOCKET_FALLBACK_DELAY_MS)
+
+  socket.onopen = () => {
+    stopSocketFallbackTimer()
+    stopPolling()
+  }
+
+  socket.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data)
+      if (Number(payload.submission_id) === Number(submissionId)) {
+        fetchSubmission()
+      }
+    } catch {}
+  }
+
+  socket.onerror = () => {
+    if (isPendingSubmission()) {
+      startPolling()
+    }
+  }
+
+  socket.onclose = () => {
+    stopSocketFallbackTimer()
+    const shouldFallback = !suppressSocketFallback && isPendingSubmission()
+    suppressSocketFallback = false
+    socket = null
+
+    if (shouldFallback) {
+      startPolling()
+    }
+  }
 }
 
 onMounted(async () => {
   await fetchSubmission()
 
-  if (submission.value?.status === 'Pending') {
-    pollTimer = setInterval(async () => {
-      await fetchSubmission()
-      if (submission.value?.status !== 'Pending') {
-        clearInterval(pollTimer)
-        pollTimer = null
-      }
-    }, 2000)
+  if (isPendingSubmission()) {
+    openSocket(routeId.value)
   }
 })
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-  }
+  stopSocketFallbackTimer()
+  closeSocket()
+  stopPolling()
 })
 </script>
 

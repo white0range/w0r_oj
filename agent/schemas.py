@@ -1,9 +1,21 @@
-from pydantic import BaseModel
+﻿from pydantic import BaseModel, Field
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str = ""
 
 
 class StudyPlanRequest(BaseModel):
     user_id: int
     goal: str = ""
+    session_summary: str = ""
+    messages: list[ChatMessage] = Field(default_factory=list)
+
+
+class SessionSummaryRequest(BaseModel):
+    existing_summary: str = ""
+    messages: list[ChatMessage] = Field(default_factory=list)
 
 
 class RecommendedProblem(BaseModel):
@@ -21,6 +33,11 @@ class StudyPlanResult(BaseModel):
 class StudyPlanResponse(BaseModel):
     message: str
     result: StudyPlanResult
+
+
+class SessionSummaryResponse(BaseModel):
+    message: str
+    summary: str
 
 
 class ProblemIndexSyncRequest(BaseModel):

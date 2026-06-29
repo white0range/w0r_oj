@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page">
     <section v-if="loading" class="loading-state">
       <strong>题目详情加载中</strong>
@@ -31,7 +31,7 @@
           <div class="hero-side-block">
             <span class="meta-label">Judge Status</span>
             <strong>{{ problem.isAc ? 'Already Accepted' : 'Ready to Submit' }}</strong>
-            <p>{{ problem.isAc ? '该账号已经通过这道题，可以继续做代码优化或复盘。' : '建议先阅读题面，再用右侧编辑器提交首个版本。' }}</p>
+            <p>{{ problem.isAc ? '该账号已经通过这道题，可以继续优化代码或做复盘。' : '建议先读题并确认边界条件，再在右侧编辑器里提交第一版解法。' }}</p>
           </div>
         </aside>
       </section>
@@ -53,7 +53,7 @@
 
           <div v-if="!store.isLoggedIn" class="empty-state compact-state">
             <strong>登录后才能提交代码</strong>
-            <span class="muted">当前后端提交接口需要 JWT 鉴权，登录后可体验完整判题链路。</span>
+            <span class="muted">当前提交接口需要 JWT 鉴权，登录后即可体验完整判题链路。</span>
             <router-link to="/login" class="btn btn-primary">去登录</router-link>
           </div>
 
@@ -129,6 +129,11 @@ const currentSubmissionId = ref(0)
 
 let socket = null
 let pollTimer = null
+let socketFallbackTimer = null
+let suppressSocketFallback = false
+
+const SOCKET_FALLBACK_DELAY_MS = 4000
+const POLL_INTERVAL_MS = 2000
 
 const placeholderByLanguage = {
   go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello Gojo")\n}',
@@ -142,6 +147,10 @@ const renderedDescription = computed(() => {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return escaped.replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>').replace(/\n/g, '<br>')
 })
+
+function isSubmissionPending() {
+  return currentSubmissionId.value > 0 && submitState.value?.kind === 'pending'
+}
 
 async function fetchProblem() {
   loading.value = true
@@ -157,6 +166,7 @@ async function fetchProblem() {
 
 function closeSocket() {
   if (socket) {
+    suppressSocketFallback = true
     socket.close()
     socket = null
   }
@@ -167,6 +177,21 @@ function stopPolling() {
     clearInterval(pollTimer)
     pollTimer = null
   }
+}
+
+function stopSocketFallbackTimer() {
+  if (socketFallbackTimer) {
+    clearTimeout(socketFallbackTimer)
+    socketFallbackTimer = null
+  }
+}
+
+function startPolling() {
+  if (!isSubmissionPending() || pollTimer) {
+    return
+  }
+
+  pollTimer = setInterval(refreshSubmission, POLL_INTERVAL_MS)
 }
 
 async function refreshSubmission() {
@@ -183,21 +208,40 @@ async function refreshSubmission() {
         message: submission.actualOutput || '可以点击下方按钮查看完整判题信息。',
         submissionId: submission.id,
       }
+      stopSocketFallbackTimer()
       stopPolling()
       closeSocket()
       fetchProblem()
     }
-  } catch {}
+  } catch {
+    startPolling()
+  }
 }
 
 function openSocket(submissionId) {
   const token = store.token
   if (!token) {
+    startPolling()
     return
   }
 
+  closeSocket()
+  stopSocketFallbackTimer()
+  suppressSocketFallback = false
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   socket = new WebSocket(`${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
+
+  socketFallbackTimer = setTimeout(() => {
+    if (socket && socket.readyState !== WebSocket.OPEN && isSubmissionPending()) {
+      startPolling()
+    }
+  }, SOCKET_FALLBACK_DELAY_MS)
+
+  socket.onopen = () => {
+    stopSocketFallbackTimer()
+    stopPolling()
+  }
 
   socket.onmessage = (event) => {
     try {
@@ -206,6 +250,23 @@ function openSocket(submissionId) {
         refreshSubmission()
       }
     } catch {}
+  }
+
+  socket.onerror = () => {
+    if (isSubmissionPending()) {
+      startPolling()
+    }
+  }
+
+  socket.onclose = () => {
+    stopSocketFallbackTimer()
+    const shouldFallback = !suppressSocketFallback && isSubmissionPending()
+    suppressSocketFallback = false
+    socket = null
+
+    if (shouldFallback) {
+      startPolling()
+    }
   }
 }
 
@@ -228,9 +289,8 @@ async function handleSubmit() {
       submissionId: result.submissionId,
     }
 
-    openSocket(result.submissionId)
     stopPolling()
-    pollTimer = setInterval(refreshSubmission, 2000)
+    openSocket(result.submissionId)
   } catch (requestError) {
     submitState.value = {
       kind: 'danger',
@@ -245,6 +305,7 @@ async function handleSubmit() {
 
 onMounted(fetchProblem)
 onUnmounted(() => {
+  stopSocketFallbackTimer()
   closeSocket()
   stopPolling()
 })

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"bytes"
@@ -139,7 +139,7 @@ func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLi
 }
 
 func buildLaunchScript(binPath string, cpuLimitMS, memoryLimitKB int) string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	if cpuLimitMS > 0 {
 		cpuLimitSeconds := (cpuLimitMS + 999) / 1000
 		if cpuLimitSeconds < 1 {
@@ -147,9 +147,10 @@ func buildLaunchScript(binPath string, cpuLimitMS, memoryLimitKB int) string {
 		}
 		parts = append(parts, fmt.Sprintf("ulimit -t %d", cpuLimitSeconds))
 	}
-	if memoryLimitKB > 0 {
-		parts = append(parts, fmt.Sprintf("ulimit -v %d", memoryLimitKB))
-	}
+	// Memory is enforced by the sandbox container cgroup limit.
+	// Using `ulimit -v` breaks Go programs because the runtime needs a larger
+	// virtual address space reservation than the resident memory limit itself.
+	_ = memoryLimitKB
 	parts = append(parts, "exec "+shellQuote(binPath))
 	return strings.Join(parts, "; ")
 }
@@ -174,3 +175,4 @@ func writeResult(result runResult) {
 		os.Exit(1)
 	}
 }
+

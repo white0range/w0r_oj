@@ -24,14 +24,31 @@ import (
 	"gorm.io/gorm"
 )
 
+type studyPlanAgentMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type studyPlanAgentRequest struct {
-	UserID uint   `json:"user_id"`
-	Goal   string `json:"goal"`
+	UserID         uint                    `json:"user_id"`
+	Goal           string                  `json:"goal"`
+	SessionSummary string                  `json:"session_summary,omitempty"`
+	Messages       []studyPlanAgentMessage `json:"messages,omitempty"`
 }
 
 type studyPlanAgentResponse struct {
 	Message string          `json:"message"`
 	Result  json.RawMessage `json:"result"`
+}
+
+type sessionSummaryRequest struct {
+	ExistingSummary string                  `json:"existing_summary,omitempty"`
+	Messages        []studyPlanAgentMessage `json:"messages"`
+}
+
+type sessionSummaryResponse struct {
+	Message string `json:"message"`
+	Summary string `json:"summary"`
 }
 
 type StudyPlanWorker struct {
@@ -127,47 +144,16 @@ func (w *StudyPlanWorker) ProcessTask(ctx context.Context, taskID uint) error {
 }
 
 func (w *StudyPlanWorker) callStudyPlanAgent(ctx context.Context, userID uint, goal string) (string, error) {
-	agentToken, err := jwtPkg.GenerateToken(w.serviceUser)
-	if err != nil {
-		return "", fmt.Errorf("generate study plan agent token failed: %w", err)
-	}
-
-	reqBody := studyPlanAgentRequest{
+	return w.callStudyPlanAgentWithPayload(ctx, studyPlanAgentRequest{
 		UserID: userID,
 		Goal:   goal,
-	}
+	})
+}
 
-	bodyBytes, err := json.Marshal(reqBody)
+func (w *StudyPlanWorker) callStudyPlanAgentWithPayload(ctx context.Context, reqBody studyPlanAgentRequest) (string, error) {
+	respBody, err := w.postAgentJSON(ctx, "/study-plan/run", reqBody)
 	if err != nil {
-		return "", fmt.Errorf("marshal study plan agent request failed: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		w.agentBaseURL+"/study-plan/run",
-		bytes.NewReader(bodyBytes),
-	)
-	if err != nil {
-		return "", fmt.Errorf("create study plan agent request failed: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+agentToken)
-
-	resp, err := w.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("do study plan agent request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read study plan agent response failed: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("study plan agent returned status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return "", err
 	}
 
 	var agentResp studyPlanAgentResponse
@@ -180,6 +166,69 @@ func (w *StudyPlanWorker) callStudyPlanAgent(ctx context.Context, userID uint, g
 	}
 
 	return string(agentResp.Result), nil
+}
+
+func (w *StudyPlanWorker) summarizeSessionMessages(ctx context.Context, existingSummary string, messages []studyPlanAgentMessage) (string, error) {
+	respBody, err := w.postAgentJSON(ctx, "/study-plan/summarize-session", sessionSummaryRequest{
+		ExistingSummary: existingSummary,
+		Messages:        messages,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	var summaryResp sessionSummaryResponse
+	if err := json.Unmarshal(respBody, &summaryResp); err != nil {
+		return "", fmt.Errorf("unmarshal session summary response failed: %w", err)
+	}
+
+	summary := strings.TrimSpace(summaryResp.Summary)
+	if summary == "" {
+		return "", fmt.Errorf("study plan agent returned empty session summary")
+	}
+	return summary, nil
+}
+
+func (w *StudyPlanWorker) postAgentJSON(ctx context.Context, path string, payload any) ([]byte, error) {
+	agentToken, err := jwtPkg.GenerateToken(w.serviceUser)
+	if err != nil {
+		return nil, fmt.Errorf("generate study plan agent token failed: %w", err)
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal study plan agent request failed: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		w.agentBaseURL+path,
+		bytes.NewReader(bodyBytes),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create study plan agent request failed: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+agentToken)
+
+	resp, err := w.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do study plan agent request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read study plan agent response failed: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("study plan agent returned status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	return respBody, nil
 }
 
 func (w *StudyPlanWorker) run(id int) {

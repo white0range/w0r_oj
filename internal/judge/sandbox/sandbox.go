@@ -1,4 +1,4 @@
-package sandbox
+﻿package sandbox
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"gojo/config"
 	"gojo/internal/judge/docker"
 	"gojo/internal/judge/model"
 
@@ -34,7 +35,11 @@ type runnerExecResult struct {
 	Error        string `json:"error"`
 }
 
-const linuxSIGXCPU = 24
+const (
+	linuxSIGXCPU            = 24
+	defaultCompileTimeout   = 45 * time.Second
+	judgeRuntimeImage       = "golang:alpine"
+)
 
 func CompileCode(ctx context.Context, code string, workDir string) (bool, string, error) {
 	codePath := filepath.Join(workDir, "main.go")
@@ -47,7 +52,7 @@ func CompileCode(ctx context.Context, code string, workDir string) (bool, string
 
 	resp, err := docker.DockerClient.ContainerCreate(ctx,
 		&container.Config{
-			Image:      "golang:alpine",
+			Image:      judgeRuntimeImage,
 			WorkingDir: "/app",
 			Cmd: []string{
 				"sh",
@@ -68,7 +73,8 @@ func CompileCode(ctx context.Context, code string, workDir string) (bool, string
 	}
 
 	statusCh, errCh := docker.DockerClient.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-	timeoutCh := time.After(10 * time.Second)
+	compileTimeout := getCompileTimeout()
+	timeoutCh := time.After(compileTimeout)
 
 	select {
 	case err := <-errCh:
@@ -76,22 +82,47 @@ func CompileCode(ctx context.Context, code string, workDir string) (bool, string
 			return false, "", fmt.Errorf("compile container wait failed: %w", err)
 		}
 	case status := <-statusCh:
-		out, _ := docker.DockerClient.ContainerLogs(ctx, resp.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
-		var stdoutBuf, stderrBuf bytes.Buffer
-		_, _ = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, out)
-
-		if status.StatusCode != 0 {
-			logOutput := strings.TrimSpace(stderrBuf.String())
-			if status.StatusCode == 11 {
-				return false, logOutput, nil
-			}
-			return false, "", fmt.Errorf("build judge helper failed: %s", logOutput)
-		}
+		return finalizeCompileResult(ctx, resp.ID, int64(status.StatusCode))
 	case <-timeoutCh:
 		if killErr := docker.DockerClient.ContainerKill(ctx, resp.ID, "SIGKILL"); killErr != nil {
+			if strings.Contains(strings.ToLower(killErr.Error()), "is not running") {
+				inspect, inspectErr := docker.DockerClient.ContainerInspect(ctx, resp.ID)
+				if inspectErr == nil && inspect.ContainerJSONBase != nil && inspect.ContainerJSONBase.State != nil {
+					return finalizeCompileResult(ctx, resp.ID, int64(inspect.ContainerJSONBase.State.ExitCode))
+				}
+			}
 			return false, "", fmt.Errorf("kill compile container failed after timeout: %w", killErr)
 		}
-		return false, "compile timeout exceeded", nil
+
+		logOutput, logErr := readCompileContainerOutput(ctx, resp.ID)
+		if logErr != nil {
+			return false, "", fmt.Errorf("read compile container logs after timeout failed: %w", logErr)
+		}
+
+		timeoutMessage := fmt.Sprintf("compile timeout exceeded after %s", compileTimeout)
+		if logOutput != "" {
+			timeoutMessage += "\n" + logOutput
+		}
+		return false, timeoutMessage, nil
+	}
+
+	return true, "", nil
+}
+
+func finalizeCompileResult(ctx context.Context, containerID string, statusCode int64) (bool, string, error) {
+	logOutput, err := readCompileContainerOutput(ctx, containerID)
+	if err != nil {
+		return false, "", fmt.Errorf("read compile container logs failed: %w", err)
+	}
+
+	if statusCode != 0 {
+		if statusCode == 11 {
+			return false, logOutput, nil
+		}
+		if logOutput == "" {
+			logOutput = fmt.Sprintf("compile container exited with code=%d", statusCode)
+		}
+		return false, "", fmt.Errorf("build judge helper failed: %s", logOutput)
 	}
 
 	return true, "", nil
@@ -105,7 +136,7 @@ func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB i
 	memoryLimitBytes := memoryLimitMB * 1024 * 1024
 
 	resp, err := docker.DockerClient.ContainerCreate(ctx, &container.Config{
-		Image:      "golang:alpine",
+		Image:      judgeRuntimeImage,
 		Cmd:        []string{"sleep", "3600"},
 		WorkingDir: "/app",
 	}, &container.HostConfig{
@@ -277,4 +308,35 @@ func isMemoryLimitExceeded(result runnerExecResult, memoryLimitKB int) bool {
 	}
 
 	return false
+}
+
+func getCompileTimeout() time.Duration {
+	seconds := config.GlobalConfig.Judge.CompileTimeoutSeconds
+	if seconds <= 0 {
+		return defaultCompileTimeout
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func readCompileContainerOutput(ctx context.Context, containerID string) (string, error) {
+	out, err := docker.DockerClient.ContainerLogs(ctx, containerID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_, _ = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, out)
+
+	stderrText := strings.TrimSpace(stderrBuf.String())
+	stdoutText := strings.TrimSpace(stdoutBuf.String())
+
+	switch {
+	case stderrText != "" && stdoutText != "":
+		return stderrText + "\n" + stdoutText, nil
+	case stderrText != "":
+		return stderrText, nil
+	default:
+		return stdoutText, nil
+	}
 }

@@ -1,25 +1,25 @@
-import os
+﻿import os
 import re
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain_deepseek import ChatDeepSeek
 from langchain_core.tools import StructuredTool
+from langchain_deepseek import ChatDeepSeek
 from pydantic import BaseModel, Field
 
 from rag.memory_service import save_study_plan_memory, search_user_memories
 from schemas import RecommendedProblem, StudyPlanResult
-from tool_executor import ToolExecutionContext, execute_tool
+from tool_executor import ToolExecutionContext, build_query_variants, execute_tool
+
+
+SUMMARY_MAX_CHARS = 1800
 
 
 def _is_debug_enabled() -> bool:
-    # 统一读取调试开关，避免日志逻辑散落在代码里难以维护。
     return os.getenv("AGENT_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_base_url() -> str | None:
-    # DeepSeek/OpenAI 兼容网关有时会带 /beta 后缀，但不同 SDK 是否接受这个后缀并不一致。
-    # 这里统一做一次归一化，尽量降低 provider URL 差异带来的运行时问题。
     base_url = os.getenv("DEEPSEEK_API_BASE") or os.getenv("OPENAI_API_BASE") or ""
     base_url = base_url.strip().rstrip("/")
     if not base_url:
@@ -30,15 +30,12 @@ def _normalize_base_url() -> str | None:
 
 
 def _build_model() -> ChatDeepSeek:
-    # 构建模型客户端是 Runtime 的第一步：
-    # 这里读取 key / model / base_url，并把温度固定为 0，
-    # 让 Tool Calling 路径更稳定、更可复现。
     api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("Please set DEEPSEEK_API_KEY or OPENAI_API_KEY first.")
 
     kwargs: dict[str, Any] = {
-        "model": os.getenv("LLM_MODEL", "deepseek-chat"),
+        "model": os.getenv("LLM_MODEL", "deepseek-v4-pro"),
         "api_key": api_key,
         "temperature": 0,
     }
@@ -49,8 +46,6 @@ def _build_model() -> ChatDeepSeek:
 
 
 class UserIDArgs(BaseModel):
-    # LangChain 的 StructuredTool 需要显式参数 schema，
-    # 这样模型在调用 tool 时才能知道每个参数的名字和含义。
     user_id: int = Field(description="User id")
 
 
@@ -71,29 +66,87 @@ class SemanticCandidateArgs(BaseModel):
     limit: int = Field(default=10, ge=1, le=20, description="Maximum number of semantic candidate problems to return")
 
 
+class HybridCandidateArgs(BaseModel):
+    query: str = Field(description="Natural language retrieval query that should be normalized and searched with hybrid recall")
+    exclude_ids: list[int] = Field(description="Problem ids to exclude")
+    limit: int = Field(default=10, ge=1, le=20, description="Maximum number of candidate problems to return")
+
+
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _collapse_whitespace(text: str) -> str:
+    return " ".join(str(text or "").strip().split())
+
+
+def _truncate_text(text: str, limit: int = SUMMARY_MAX_CHARS) -> str:
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get("role", "user")).strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            role = "user"
+        normalized.append(
+            {
+                "role": role,
+                "content": str(message.get("content", "")).strip(),
+            }
+        )
+    return normalized
+
+
+def _role_label(role: str) -> str:
+    if role == "assistant":
+        return "Assistant"
+    if role == "system":
+        return "System"
+    return "User"
+
+
+def _messages_to_transcript(messages: list[dict[str, Any]]) -> str:
+    lines = []
+    for message in _normalize_chat_messages(messages):
+        content = _collapse_whitespace(message.get("content", ""))
+        if not content:
+            continue
+        lines.append(f"{_role_label(message['role'])}: {content}")
+    return "\n".join(lines)
+
+
 def _memory_context_text(memories: list[dict[str, Any]]) -> str:
-    # 把向量检索回来的 memory 结果压成一段纯文本上下文，
-    # 再交给模型使用。这里不直接把原始 payload 暴露给模型，
-    # 是为了控制上下文格式并减少提示词噪声。
     if not memories:
         return ""
 
-    lines = ["Relevant past study-plan memories for this user:"]
+    lines = ["Relevant long-term memories for this user:"]
     for index, memory in enumerate(memories, start=1):
         lines.append(
             f"{index}. score={memory.get('score', 0):.4f}, "
-            f"goal={memory.get('goal', '')}, "
+            f"kind={memory.get('memory_kind', '')}, "
+            f"query={memory.get('query_text', '')}, "
             f"memory={memory.get('memory_text', '')}"
         )
     return "\n".join(lines)
 
 
-def _load_memory_context(user_id: int, goal: str, debug_enabled: bool) -> str:
-    # memory 是 best-effort 能力：
-    # - 查到了就增强上下文
-    # - 查不到或者 collection 不存在，也不应阻断主业务
-    # 这样可以保证学习规划主链对 memory 故障不敏感。
-    query = goal.strip() or "general study plan"
+def _load_memory_context(user_id: int, query_text: str, debug_enabled: bool) -> str:
+    query = query_text.strip() or "general oj study chat"
     try:
         memories = search_user_memories(user_id=user_id, query=query)
     except Exception as e:
@@ -107,12 +160,14 @@ def _load_memory_context(user_id: int, goal: str, debug_enabled: bool) -> str:
     return _memory_context_text(memories)
 
 
-def _save_memory(user_id: int, goal: str, result: StudyPlanResult, debug_enabled: bool) -> None:
-    # 保存 memory 同样是 best-effort：
-    # 当前请求的核心目标是返回 study plan，
-    # memory 写入失败不应该让用户请求整体失败。
+def _save_memory(user_id: int, query_text: str, result: StudyPlanResult, debug_enabled: bool) -> None:
     try:
-        point_id = save_study_plan_memory(user_id=user_id, goal=goal, result=result)
+        point_id = save_study_plan_memory(
+            user_id=user_id,
+            query_text=query_text,
+            result=result,
+            memory_kind="study_plan_chat",
+        )
     except Exception as e:
         if debug_enabled:
             print(f"[agent] memory save skipped due to error: {e}")
@@ -123,9 +178,6 @@ def _save_memory(user_id: int, goal: str, result: StudyPlanResult, debug_enabled
 
 
 def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTool]:
-    # 这里是“把现有系统能力暴露给模型”的关键步骤。
-    # 每个内层函数都很薄：只负责把 LangChain 的 tool 调用转成统一的 execute_tool(...) 分发。
-    # 这样 Tool 定义层和 Tool 执行层就解耦了。
     def user_ac_history(user_id: int) -> dict:
         """Get the user's solved history, including solved count and solved problem ids."""
         return execute_tool("user_ac_history", {"user_id": user_id}, token, context)
@@ -164,56 +216,48 @@ def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTo
             context,
         )
 
+    def hybrid_candidate_problems(query: str, exclude_ids: list[int], limit: int = 10) -> dict:
+        """Normalize the query and retrieve candidate problems with lexical plus semantic hybrid recall."""
+        return execute_tool(
+            "hybrid_candidate_problems",
+            {
+                "query": query,
+                "exclude_ids": exclude_ids,
+                "limit": limit,
+            },
+            token,
+            context,
+        )
+
     return [
-        # StructuredTool.from_function 会把 Python 函数 + 参数 schema 封装成 LangChain 可调用工具。
-        # 这些工具最终会出现在 create_agent(...) 的可用工具集合里。
         StructuredTool.from_function(func=user_ac_history, args_schema=UserIDArgs),
         StructuredTool.from_function(func=user_failed_submissions, args_schema=FailedSubmissionArgs),
         StructuredTool.from_function(func=user_tag_stats, args_schema=UserIDArgs),
         StructuredTool.from_function(func=candidate_problems, args_schema=RuleCandidateArgs),
         StructuredTool.from_function(func=semantic_candidate_problems, args_schema=SemanticCandidateArgs),
+        StructuredTool.from_function(func=hybrid_candidate_problems, args_schema=HybridCandidateArgs),
     ]
 
 
 def _extract_result_text(result: dict[str, Any]) -> str:
-    # LangChain invoke 的返回结果里通常会带 messages。
-    # 我们只关心最后一条模型消息里的纯文本内容，再把它交给本地解析器。
     messages = result.get("messages") or []
     if not messages:
         return ""
     content = getattr(messages[-1], "content", "")
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                parts.append(item.get("text", ""))
-        return "\n".join(parts).strip()
-    return ""
+    return _message_content_to_text(content)
 
 
 def _parse_plain_text_result(text: str) -> StudyPlanResult:
-    # 这一段是“去掉框架级 structured output 后，仍然拿到结构化结果”的关键。
-    # 策略是：
-    # 1. 用 prompt 强约束输出固定模板
-    # 2. 在本地用正则 + 字段解析，把文本结果转回 Pydantic 对象
-    # 这样通常比 provider 原生 schema 输出更稳。
     text = text.strip()
     if not text:
         raise ValueError("empty final response")
 
-    # 先按大段切出三个区域：
-    # - WEAK_TAGS
-    # - RECOMMENDED_PROBLEMS
-    # - SUMMARY
     weak_match = re.search(r"WEAK_TAGS:\s*(.*?)(?:\nRECOMMENDED_PROBLEMS:|\Z)", text, flags=re.S)
     recommended_match = re.search(r"RECOMMENDED_PROBLEMS:\s*(.*?)(?:\nSUMMARY:|\Z)", text, flags=re.S)
     summary_match = re.search(r"SUMMARY:\s*(.*)\Z", text, flags=re.S)
 
     weak_tags: list[str] = []
     if weak_match:
-        # 允许模型用逗号分隔多个弱项标签，NONE 表示没有明确弱项。
         raw = weak_match.group(1).strip()
         if raw and raw.upper() != "NONE":
             weak_tags = [item.strip() for item in raw.split(",") if item.strip()]
@@ -225,9 +269,6 @@ def _parse_plain_text_result(text: str) -> StudyPlanResult:
             line = line.strip()
             if not line.startswith("-"):
                 continue
-            # 每道推荐题都要求按：
-            # - problem_id=1; title=...; reason=...
-            # 这种结构输出，便于本地解析。
             payload = line.removeprefix("-").strip()
             parts = [part.strip() for part in payload.split(";") if part.strip()]
             item: dict[str, str] = {}
@@ -254,31 +295,110 @@ def _parse_plain_text_result(text: str) -> StudyPlanResult:
     )
 
 
-def run_study_plan_with_langchain(user_id: int, goal: str, token: str) -> StudyPlanResult:
-    # 这是学习规划 Agent 的主流程：
-    # 1. 读调试开关
-    # 2. 读取该用户的相关历史记忆
-    # 3. 初始化本次请求的 tool 执行上下文
-    # 4. 创建 LangChain Agent（模型 + tools + system prompt）
-    # 5. 组织 user prompt 和 memory 上下文
-    # 6. 调 agent.invoke 让模型自己决定如何调用工具
-    # 7. 从最终消息里取文本结果并解析成 StudyPlanResult
-    # 8. 把这次结果写回 memory，供未来请求使用
+def _latest_user_query(goal: str, messages: list[dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        if str(message.get("role", "")).strip().lower() == "user":
+            content = str(message.get("content", "")).strip()
+            if content:
+                return content
+    return goal.strip()
+
+
+def _build_runtime_messages(
+    user_id: int,
+    goal: str,
+    session_summary: str,
+    messages: list[dict[str, Any]],
+    memory_context: str,
+) -> list[dict[str, str]]:
+    runtime_messages: list[dict[str, str]] = []
+
+    if messages:
+        runtime_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Continue the OJ learning conversation for user_id={user_id}. "
+                    "Answer the latest user message directly, and only recommend problems when it is useful."
+                ),
+            }
+        )
+        if session_summary.strip():
+            runtime_messages.append(
+                {
+                    "role": "user",
+                    "content": f"Short-term session summary:\n{session_summary.strip()}",
+                }
+            )
+        if memory_context:
+            runtime_messages.append({"role": "user", "content": memory_context})
+        runtime_messages.extend(_normalize_chat_messages(messages))
+        return runtime_messages
+
+    runtime_messages.append(
+        {
+            "role": "user",
+            "content": f"Generate a study plan for user_id={user_id}. User goal: {goal or 'No explicit goal provided.'}",
+        }
+    )
+    if memory_context:
+        runtime_messages.append({"role": "user", "content": memory_context})
+    return runtime_messages
+
+
+def summarize_study_plan_session(existing_summary: str = "", messages: list[dict[str, Any]] | None = None) -> str:
+    normalized_messages = _normalize_chat_messages(messages or [])
+    transcript = _messages_to_transcript(normalized_messages)
+    if not transcript:
+        return _truncate_text(existing_summary.strip())
+
+    prompt = (
+        "You compress older OJ tutoring conversation turns into short-term memory. "
+        "Merge the existing summary and the newly archived messages into one concise plain-text summary. "
+        "Keep only durable facts that will help future turns: user goals, weak topics, constraints, solved issues, preferences, and any concrete recommended directions. "
+        "Do not mention timestamps, pleasantries, or that this is a summary. "
+        "Output plain text only.\n\n"
+        f"Existing summary:\n{existing_summary.strip() or 'none'}\n\n"
+        f"New archived messages:\n{transcript}\n"
+    )
+
+    response = _build_model().invoke(prompt)
+    summary = _truncate_text(_message_content_to_text(getattr(response, "content", response)))
+    if summary:
+        return summary
+
+    fallback = existing_summary.strip()
+    if transcript:
+        fallback = f"{fallback}\n{transcript}".strip()
+    return _truncate_text(fallback)
+
+
+def run_study_plan_with_langchain(
+    user_id: int,
+    goal: str,
+    token: str,
+    session_summary: str = "",
+    messages: list[dict[str, Any]] | None = None,
+) -> StudyPlanResult:
     debug_enabled = _is_debug_enabled()
-    memory_context = _load_memory_context(user_id=user_id, goal=goal, debug_enabled=debug_enabled)
+    normalized_messages = messages or []
+    latest_user_query = _latest_user_query(goal, normalized_messages) or "general oj study chat"
+    memory_context = _load_memory_context(user_id=user_id, query_text=latest_user_query, debug_enabled=debug_enabled)
     context = ToolExecutionContext()
 
     agent = create_agent(
-        # create_agent 是 LangChain 帮我们管理 Tool Calling 循环的入口。
-        # 它并不决定具体业务逻辑；业务数据、工具语义、RAG 和 memory 仍然由我们自己控制。
         model=_build_model(),
         tools=_build_tools(token, context),
         system_prompt=(
-            "You are an OJ study plan assistant. "
-            "Decide which tools are needed to build a personalized study plan. "
-            "Available tools include user history tools, a rule-based candidate retrieval tool, and a semantic vector retrieval tool. "
-            "Use tools only when necessary, avoid repeated calls with different parameters unless the previous result is clearly insufficient. "
-            "If past study-plan memory is provided, use it as auxiliary context but still prioritize the latest tool results. "
+            "You are an OJ chat assistant. "
+            "Support both direct algorithm/OJ Q&A and personalized training recommendations. "
+            "If the latest user message is a basic question, answer it clearly and keep recommendations empty unless they truly help. "
+            "If the latest user message asks for practice suggestions or a study plan, personalize the reply with tools. "
+            "Available tools include user history tools, a rule-based candidate retrieval tool, a semantic retrieval tool, and a hybrid lexical+semantic retrieval tool. "
+            "Prefer hybrid_candidate_problems for natural-language retrieval, candidate_problems when tags are explicit, and semantic_candidate_problems only when hybrid retrieval is still insufficient. "
+            "Use session summary and long-term memory only as auxiliary context, and prioritize the latest user request. "
+            "Helpful normalized query variants may include: "
+            f"{', '.join(build_query_variants(latest_user_query))}. "
             "When you finish, do not call any special finish tool. "
             "Instead, respond in this exact plain-text format:\n"
             "WEAK_TAGS: tag1, tag2\n"
@@ -291,31 +411,23 @@ def run_study_plan_with_langchain(user_id: int, goal: str, token: str) -> StudyP
         ),
     )
 
-    # 第一条 user prompt 负责明确本次任务目标。
-    user_prompt = (
-        f"Generate a study plan for user_id={user_id}. "
-        f"User goal: {goal or 'No explicit goal provided.'}"
+    runtime_messages = _build_runtime_messages(
+        user_id=user_id,
+        goal=goal,
+        session_summary=session_summary,
+        messages=normalized_messages,
+        memory_context=memory_context,
     )
 
-    messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
-    if memory_context:
-        # memory 不作为 system prompt，而是作为额外 user message 注入，
-        # 这样模型能把它当作“辅助上下文”，而不是硬约束。
-        messages.append({"role": "user", "content": memory_context})
-
     if debug_enabled:
-        print(f"[agent] start langchain deepseek agent user_id={user_id} goal={goal!r}")
+        print(f"[agent] start langchain deepseek agent user_id={user_id} latest_query={latest_user_query!r}")
 
-    # 这里是整个 Agent 真正开始“思考 + 调工具”的地方。
-    # Agent 会根据 system prompt 和当前消息，自主决定先查什么、要不要走 rule retrieval、要不要走 semantic retrieval。
-    result = agent.invoke({"messages": messages})
+    result = agent.invoke({"messages": runtime_messages})
 
     if debug_enabled:
         print(f"[agent] invoke finished keys={list(result.keys())}")
 
-    # invoke 返回后，再由我们自己接管最终结果抽取和解析，
-    # 这就是当前这套“轻量 LangChain runtime”的核心稳定性策略。
     final_text = _extract_result_text(result)
     parsed = _parse_plain_text_result(final_text)
-    _save_memory(user_id=user_id, goal=goal, result=parsed, debug_enabled=debug_enabled)
+    _save_memory(user_id=user_id, query_text=latest_user_query, result=parsed, debug_enabled=debug_enabled)
     return parsed

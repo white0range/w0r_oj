@@ -16,6 +16,7 @@ var (
 	ErrForbidden          = errors.New("forbidden")
 	ErrAlreadyAccepted    = errors.New("already accepted")
 	ErrAIConnectFailed    = errors.New("ai connect failed")
+	ErrChatSessionBusy    = errors.New("study plan session has active turn")
 
 	ErrInvalidID       = errors.New("invalid id")
 	ErrProblemNotFound = errors.New("problem not found")

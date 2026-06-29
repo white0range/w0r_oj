@@ -214,6 +214,11 @@ export async function createStudyPlanSession(payload = {}) {
   return unwrapData(body)
 }
 
+export async function deleteStudyPlanSession(id) {
+  const body = getBody(await api.delete(`/study-plan/sessions/${id}`))
+  return unwrapData(body)
+}
+
 export async function getStudyPlanSession(id) {
   const body = getBody(await api.get(`/study-plan/sessions/${id}`))
   return unwrapData(body)
@@ -345,3 +350,4 @@ export async function adminUpdateProblemTags(id, payload) {
 }
 
 export default api
+

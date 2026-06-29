@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"fmt"
@@ -63,7 +63,8 @@ type ElasticsearchConfig struct {
 }
 
 type JudgeConfig struct {
-	WorkerCount int `mapstructure:"worker_count"`
+	WorkerCount           int `mapstructure:"worker_count"`
+	CompileTimeoutSeconds int `mapstructure:"compile_timeout_seconds"`
 }
 
 type StudyPlanConfig struct {
@@ -100,6 +101,7 @@ func InitConfig() {
 
 	viper.SetDefault("elasticsearch.addresses", []string{"http://localhost:9200"})
 	viper.SetDefault("judge.worker_count", 3)
+	viper.SetDefault("judge.compile_timeout_seconds", 45)
 	viper.SetDefault("study_plan.worker_count", 3)
 	viper.SetDefault("study_plan.agent_base_url", "http://localhost:8000")
 	viper.SetDefault("study_plan.agent_timeout_seconds", 60)

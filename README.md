@@ -1,421 +1,317 @@
-# Gojo OJ
+﻿# Gojo OJ
 
-一个面向在线判题场景的全栈练手项目。  
-项目在传统 OJ 的基础上，扩展了两条 AI 业务线：
+Gojo OJ is a full-stack algorithm training platform that combines online judging, asynchronous evaluation, search and retrieval, and AI-assisted study workflows into a single system. The repository is organized around a Go backend as the source of truth, a Vue frontend for user interaction, and a Python agent service for conversational guidance, retrieval augmentation, and memory.
 
-- `analysis`：对一次错误提交做异步诊断与解释
-- `study_plan`：结合用户历史、规则召回、语义召回与文本记忆生成训练计划
+Unlike a toy OJ that only stores problems and returns verdicts, this project already covers the core runtime concerns of a real system: queue-based judging, cache invalidation, search indexing, semantic retrieval, session-oriented AI interaction, and cross-service coordination.
 
-当前仓库已经不只是一个“做题 + 判题”的 Demo，而是一个带有：
+## Highlights
 
-- Go 主业务系统
-- Python AI 服务
-- 异步任务链
-- RAG 检索
-- Qdrant memory
-- 反馈与统计闭环
+- Online Judge for code submission, compilation, sandboxed execution, and verdict generation
+- Redis-backed asynchronous workers for judging, AI analysis, and study-plan turns
+- Problem management with tags, test cases, admin CRUD, and cache invalidation
+- Elasticsearch-based lexical search for title, description, and tag filtering
+- Qdrant-based vector retrieval for problem recommendations and long-term memory
+- Conversational AI study assistant with session context, short-term summary compression, and long-term memory recall
+- Incremental synchronization from problem CRUD to both search index and RAG knowledge base
+- WebSocket and SSE based result delivery for submissions and AI turn streaming
 
-的学习辅助系统。
+## System Overview
 
----
+The project is split into three runtime layers:
 
-## 目录
+1. Go backend
+   - Owns users, problems, tags, test cases, submissions, ranking, chat sessions, and study-plan tasks
+   - Exposes public APIs, admin APIs, WebSocket notifications, and internal tool APIs for the Python agent
+   - Runs worker pools for judge, analysis, and study-plan processing
 
-- [项目定位](#项目定位)
-- [功能概览](#功能概览)
-- [系统架构](#系统架构)
-- [技术栈](#技术栈)
-- [目录结构](#目录结构)
-- [核心业务说明](#核心业务说明)
-- [本地启动](#本地启动)
-- [配置说明](#配置说明)
-- [RAG 与 Memory](#rag-与-memory)
-- [主要接口](#主要接口)
-- [调试与排查](#调试与排查)
-- [设计取舍](#设计取舍)
-- [后续演进方向](#后续演进方向)
+2. Python agent service
+   - Provides the AI execution layer through FastAPI + LangChain + DeepSeek
+   - Handles conversational study-plan turns, session summarization, problem vector sync, and semantic retrieval
+   - Uses Qdrant for both problem embeddings and user long-term memory
 
----
+3. Frontend application
+   - Built with Vue 3 + Vite
+   - Covers OJ usage, admin console, ranking, submissions, and the AI study workspace
 
-## 项目定位
+Supporting infrastructure is provided through Docker Compose:
 
-这个项目的目标不是只实现一个基础 OJ，而是尽量把后端工程能力和 AI 工作流能力串起来，覆盖下面几类真实问题：
+- Redis: queues and cache
+- Elasticsearch: lexical retrieval
+- Kibana: search inspection
+- Qdrant: vector database
+- Agent: Python AI service
 
-- 用户、权限、题目、提交、排行榜等常规业务系统设计
-- 基于 Redis 的异步判题与异步 AI 任务
-- Go 主系统与 Python AI 服务分层协作
-- 基于 DeepSeek 的手写 tool loop runtime
-- 基于 DashScope embedding + Qdrant 的题目语义检索
-- 基于 Qdrant 的轻量文本记忆
-- 用户反馈与管理员统计闭环
+MySQL is the primary relational store and is initialized by GORM auto-migration during backend startup.
 
-适合用来展示：
-
-- 后端分层设计
-- 异步任务链路
-- 多服务协作
-- AI agent runtime 设计
-- RAG / memory 在真实业务中的接入方式
-
----
-
-## 功能概览
-
-### 1. OJ 基础能力
-
-- 用户注册、登录、JWT 鉴权
-- 题目列表、题目详情、标签管理
-- 测试用例管理
-- 代码提交、异步判题
-- 排行榜
-- Elasticsearch 题目搜索
-
-### 2. AI 错题诊断 `analysis`
-
-- 创建异步分析任务
-- 后台 worker 执行诊断
-- 保存分析结果
-- 用户提交反馈
-- 管理员查看统计
-
-### 3. AI 训练规划 `study_plan`
-
-- 创建异步训练计划任务
-- Go worker 调用 Python AI 服务
-- 基于用户历史生成个性化训练建议
-- 返回结构化结果：
-  - `weak_tags`
-  - `recommended_problems`
-  - `study_plan_summary`
-- 用户反馈
-- 管理员统计
-
-### 4. RAG 能力
-
-- 题目导出为 `document + metadata`
-- DashScope `text-embedding-v3` 向量化
-- Qdrant 存储题目向量
-- 语义检索 demo
-- 题目创建 / 更新 / 改标签 / 删除后增量同步到 Qdrant
-
-### 5. Memory 能力
-
-- 基于 Qdrant 的轻量文本记忆
-- 按 `user_id + goal` 召回相关历史训练计划
-- `study_plan` 生成成功后自动写入记忆
-
----
-
-## 系统架构
-
-```mermaid
-flowchart LR
-  U["User / Frontend"] --> G["Go Backend (Gin)"]
-  G --> M["MySQL"]
-  G --> R["Redis"]
-  G --> E["Elasticsearch"]
-
-  G -->|study_plan task| Q["Redis Queue"]
-  Q --> W["Study Plan Worker (Go)"]
-  W --> P["Python Agent Service"]
-
-  P -->|internal tool API| G
-  P --> D["DeepSeek"]
-  P --> V["Qdrant"]
-  P --> DS["DashScope Embedding"]
-```
-
-### 分层职责
-
-#### Go 负责
-
-- 用户、权限、JWT
-- 题目、提交、排行榜等主业务数据
-- 判题与 AI 任务的 task / queue / worker
-- internal tool API
-- feedback / stats
-
-#### Python 负责
-
-- AI runtime
-- DeepSeek tool loop
-- RAG 检索
-- memory 读写
-- 训练计划生成
-
-### 为什么这么拆
-
-这样拆分后：
-
-- Go 继续作为业务真相来源
-- Python 专注 AI 推理与检索能力
-- 边界清晰，不把用户系统和 AI 流程耦合成一团
-
----
-
-## 技术栈
-
-### 后端
-
-- Go
-- Gin
-- Gorm
-- MySQL
-- Redis
-- Elasticsearch
-- Docker SDK
-
-### AI / 检索
-
-- Python
-- FastAPI
-- DeepSeek
-- DashScope `text-embedding-v3`
-- Qdrant
-
-### 前端
-
-- Vue 3
-- Vite
-- Axios
-- Vue Router
-
----
-
-## 目录结构
+## Architecture
 
 ```text
-gojo/
-├─ agent/                         # Python AI 服务
-│  ├─ app.py                      # FastAPI 入口
-│  ├─ agent_runner.py             # study_plan agent 入口
-│  ├─ tool_executor.py            # tool 执行分发
-│  ├─ client.py                   # 调 Go internal tool API
-│  ├─ schemas.py                  # 请求 / 响应模型
-│  └─ rag/
-│     ├─ export_problem_docs.py   # 导出题目文档
-│     ├─ index_problem_docs.py    # 批量写入 Qdrant
-│     ├─ search_demo.py           # 最小检索 demo
-│     ├─ search_service.py        # 语义检索服务层
-│     ├─ index_service.py         # Qdrant upsert / delete
-│     ├─ problem_doc_service.py   # 单题文档构建
-│     └─ memory_service.py        # 文本 memory 检索与写入
-├─ cmd/server/                    # Go 启动入口
-├─ config/                        # Go 配置
-├─ infrastructure/                # MySQL / Redis / ES / Qdrant 配置
-├─ internal/
-│  ├─ analysis/                   # analysis 业务
-│  ├─ app/                        # 路由 / 中间件 / 响应
-│  ├─ judge/                      # 判题
-│  ├─ leaderboard/                # 排行榜
-│  ├─ problem/                    # 题目 / 标签 / 搜索
-│  ├─ study_plan/                 # 训练计划任务 / feedback / stats
-│  ├─ submission/                 # 提交
-│  └─ user/                       # 用户
-├─ pkg/                           # JWT / AI provider 等公共组件
-├─ vue/                           # 前端
-├─ docker-compose.yml
-├─ .env.example
-└─ README.md
+Vue 3 Frontend
+    |
+    v
+Go API Server (Gin)
+    |- MySQL
+    |- Redis
+    |- Elasticsearch
+    |- Docker Engine (judge sandbox)
+    |
+    +--> Judge Worker Pool
+    +--> Analysis Worker Pool
+    +--> Study Plan Worker Pool
+    +--> Chat Turn Worker Pool
+              |
+              v
+       Python Agent (FastAPI + LangChain)
+              |
+              +--> DeepSeek LLM
+              +--> DashScope Embeddings
+              +--> Qdrant
 ```
 
----
+## Core Workflows
 
-## 核心业务说明
+### 1. Submission and Judging
 
-## `analysis`
+The judging pipeline is queue-based and asynchronous.
 
-目标：解释一次错误提交为什么错。
+1. The user submits code through `POST /api/submit`.
+2. The backend creates a submission record and pushes a task into Redis.
+3. Judge workers consume the queue and invoke `internal/judge/service`.
+4. The service compiles user code inside a Docker-based sandbox.
+5. Test cases are executed one by one in an isolated runtime container.
+6. The system compares outputs and writes the final verdict back to MySQL.
+7. Submission updates are pushed to the frontend through WebSocket.
 
-流程：
+Supported verdicts include `AC`, `WA`, `RE`, `TLE`, `MLE`, `CE`, and `SE`.
 
-1. 用户创建分析任务
-2. Go 写任务表并入队
-3. worker 拉取 submission 与题目上下文
-4. AI 生成诊断结果
-5. 结果落库
-6. 用户提交反馈
-7. 管理员查看统计
+### 2. Problem Search and Retrieval
 
-这一条更偏“诊断型 AI”。
+The project uses a two-layer retrieval model.
 
----
+1. Lexical retrieval
+   - Implemented with Elasticsearch
+   - Supports title and description matching, plus tag filtering
+   - Used directly by the problem search API
 
-## `study_plan`
+2. Semantic retrieval
+   - Implemented with DashScope embeddings + Qdrant
+   - Used by the Python agent when looking for related problems by intent rather than exact wording
 
-目标：告诉用户接下来应该练什么。
+3. Hybrid retrieval
+   - Implemented in the agent layer
+   - Expands and normalizes the user query, merges lexical and semantic candidates, and reranks them
+   - If semantic embedding fails, the agent falls back to lexical retrieval instead of failing the whole turn
 
-这是当前仓库最完整的一条 AI 业务线。
+### 3. Conversational AI Study Assistant
 
-### 业务链
+The current study assistant is session-based rather than one-shot.
 
-1. 用户调用 `POST /api/study-plan/tasks`
-2. Go 创建任务并写入 Redis 队列
-3. `study_plan worker` 异步消费
-4. worker 调 Python `/study-plan/run`
-5. Python agent 调用 DeepSeek
-6. DeepSeek 根据需要调用工具
-7. Python runtime 执行 tools、读取 RAG、读取 memory
-8. 返回结构化训练计划
-9. Go 回写任务结果到 MySQL
-10. 用户查询任务状态、提交反馈，管理员查看统计
+1. The frontend creates a chat session with `POST /api/study-plan/sessions`.
+2. Each user message creates a pending chat turn in MySQL and enqueues a Redis task.
+3. Chat turn workers fetch the turn, prepare context, and call the Python agent.
+4. The agent decides whether to use tools such as:
+   - user AC history
+   - failed submission history
+   - tag statistics
+   - rule-based candidate problems
+   - semantic candidate problems
+   - hybrid candidate problems
+5. The worker stores the assistant reply and streams turn status via SSE.
 
-### 当前 `study_plan` agent 形态
+This gives the system two capabilities at the same time:
 
-当前 `study_plan` Agent 运行在：
+- practical recommendation of next problems to solve
+- ordinary conversation-style algorithm Q&A in the same session
 
-- LangChain `create_agent`
-- ChatDeepSeek Tool Calling
-- 规则检索 + 语义检索 + memory 增强
-- 本地模板解析生成结构化结果
+### 4. Short-Term and Long-Term Memory
 
-这样做的原因是：
+The AI workflow uses two memory layers.
 
-- 对 DeepSeek tool calling 协议更稳定
-- 更容易调试和定位问题
-- 保留 LLM 决策能力的同时，避免框架黑盒兼容问题
+Short-term memory:
+- Stored in MySQL chat tables
+- Recent messages are kept in an active window
+- Older messages are archived and merged into a session summary
+- The current worker window size is 8 recent messages
 
-### 当前可用 tools
+Long-term memory:
+- Stored in Qdrant collection `study_plan_memories`
+- Saves durable user-specific learning context after successful turns
+- Recalled before LLM invocation as auxiliary context for future turns
 
-- `user_ac_history`
-- `user_failed_submissions`
-- `user_tag_stats`
-- `candidate_problems`
-- `semantic_candidate_problems`
+### 5. Problem Knowledge Synchronization
 
-其中：
+Problem data is synchronized incrementally when admins change the source of truth in MySQL.
 
-- `candidate_problems`：规则 / 标签候选题召回
-- `semantic_candidate_problems`：Qdrant 语义候选题召回
+- Problem create/update/tag update triggers:
+  - Redis cache invalidation
+  - Elasticsearch document upsert
+  - Python agent RAG sync endpoint call
+- Problem delete triggers:
+  - relational cleanup through backend business logic
+  - Elasticsearch delete
+  - Python agent vector delete
 
----
+This design keeps search and vector knowledge aligned with the business layer instead of encouraging direct database edits.
 
-## 本地启动
+## Tech Stack
 
-## 1. 环境准备
+### Backend
 
-请先准备：
+- Go 1.26
+- Gin
+- GORM + MySQL
+- Redis
+- Docker SDK for Go
+- Elasticsearch v8 client
+- JWT authentication
+- WebSocket + SSE
 
-- Go
-- Node.js
-- MySQL
+### AI and Retrieval
+
+- FastAPI
+- LangChain
+- DeepSeek chat model
+- DashScope embedding model
+- Qdrant vector database
+
+### Frontend
+
+- Vue 3
+- Vue Router
+- Axios
+- Vite
+
+## Repository Structure
+
+```text
+cmd/server/                  Go application entrypoint
+config/                      YAML configuration files and config loader
+infrastructure/              MySQL, Redis, Elasticsearch, WebSocket, Qdrant config
+internal/app/                route registration and middleware
+internal/problem/            problem, tag, testcase, search modules
+internal/submission/         submission creation and query
+internal/judge/              sandbox, Docker integration, judge service, workers
+internal/analysis/           AI incorrect-submission analysis pipeline
+internal/study_plan/         task mode + chat mode study-plan domain
+pkg/                         shared packages such as response, jwt, ecode, ai
+agent/                       Python FastAPI agent service
+agent/rag/                   vector indexing, retrieval, and memory helpers
+vue/                         Vue frontend application
+docker-compose.yml           local infra and agent runtime definition
+```
+
+## Key Domain Models
+
+The relational model is centered around the following entities:
+
+- `users`
+- `problems`
+- `tags`
+- `testcases`
+- `submissions`
+- `analysis_tasks` and `analysis_feedback`
+- `study_plan_tasks` and `study_plan_feedback`
+- `chat_sessions`, `chat_messages`, and `chat_turns`
+
+These tables are created automatically by `AutoMigrate` during backend startup.
+
+## Local Development
+
+### 1. Prerequisites
+
+Install the following locally:
+
+- Go 1.26+
+- Node.js 18+
 - Docker Desktop
+- MySQL 8+
 
-推荐运行方式：
+The backend depends on a running Docker Engine because code compilation and execution are performed in containers.
 
-- MySQL：本地安装
-- Go：本地运行
-- Redis / Elasticsearch / Kibana / Qdrant / Python agent：Docker Compose
+### 2. Create the Database
 
----
-
-## 2. 创建数据库
+Create an empty MySQL database, for example:
 
 ```sql
-CREATE DATABASE gin_demo CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE w0roj CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
----
+You do not need to create tables manually. The backend will auto-migrate schema on startup.
 
-## 3. Go 配置
+### 3. Prepare Backend Config
 
-复制模板：
+Copy the example file:
 
 ```powershell
 Copy-Item config\config.example.yaml config\config.dev.yaml
 ```
 
-至少修改：
+Set `APP_ENV=dev`, then edit `config/config.dev.yaml` with your local values.
+
+Typical fields you need to confirm:
 
 - `sql.dsn`
+- `redis.addr`
 - `jwt.secret`
 - `ai.api_key`
-- `ai.model`
+- `study_plan.agent_base_url`
+- `elasticsearch.addresses`
 
-`study_plan` 相关配置：
+### 4. Prepare Root `.env` for Docker Compose
 
-```yaml
-study_plan:
-  worker_count: 3
-  agent_base_url: "http://localhost:8000"
-  agent_timeout_seconds: 60
-```
+Create or update the repository root `.env` file. This file is mainly consumed by the Python agent container.
 
-注意：
-
-- `study_plan.worker_count` 必须大于 `0`
-- 否则任务会一直停在 `pending`
-
----
-
-## 4. Python / Docker 配置
-
-复制：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-至少填写：
+Required fields:
 
 ```env
-DEEPSEEK_API_KEY=your_deepseek_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
 DEEPSEEK_API_BASE=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro
 GO_BACKEND_BASE_URL=http://host.docker.internal:8080
-AGENT_DEBUG=false
-
-DASHSCOPE_API_KEY=your_dashscope_key
+DASHSCOPE_API_KEY=your_dashscope_api_key
 EMBEDDING_MODEL=text-embedding-v3
 EMBEDDING_DIMENSION=1024
 QDRANT_URL=http://qdrant:6333
 MEMORY_COLLECTION=study_plan_memories
 MEMORY_TOP_K=3
+AGENT_DEBUG=true
 ```
 
----
+Optional field:
 
-## 5. 启动基础服务与 agent
+```env
+EXPORT_API_TOKEN=
+```
+
+`EXPORT_API_TOKEN` is only needed for some standalone export scripts and is not part of the normal online runtime path.
+
+### 5. Start Infrastructure and Agent
 
 ```powershell
-cd D:\beryl\letsgo\gojo
-docker compose up -d redis elasticsearch kibana qdrant
-docker compose build agent
-docker compose up -d agent
+docker compose up -d --build
 ```
 
-查看 agent 日志：
+Default ports:
 
-```powershell
-docker compose logs -f agent
-```
+- `8000`: Python agent
+- `6379`: Redis
+- `9200`: Elasticsearch
+- `5601`: Kibana
+- `6333`: Qdrant HTTP
+- `6334`: Qdrant gRPC
 
-如果要打开调试日志：
+If port `5601` is already occupied on your machine, adjust the host-side mapping in `docker-compose.yml`, for example `5602:5601`.
 
-1. 把 `.env` 里的 `AGENT_DEBUG=true`
-2. 不要只执行 `restart`，而要重建容器：
-
-```powershell
-docker compose up -d --force-recreate agent
-```
-
----
-
-## 6. 启动 Go 后端
+### 6. Start the Go Backend
 
 ```powershell
 $env:APP_ENV="dev"
 go run .\cmd\server\main.go
 ```
 
-正常应看到：
+The API server listens on port `8080` by default.
 
-- `server listening on :8080`
-- `starting study plan worker pool, workers=3`
-
----
-
-## 7. 启动前端
+### 7. Start the Frontend
 
 ```powershell
 cd vue
@@ -423,323 +319,113 @@ npm install
 npm run dev
 ```
 
-默认地址通常是：
+The frontend uses `/api` as its base path and expects the Go backend to be reachable locally.
 
-- [http://localhost:5173](http://localhost:5173)
+## Search, RAG, and Rebuild Operations
 
----
+### Incremental Sync
 
-## 配置说明
+Normal admin operations already trigger incremental synchronization automatically:
 
-## Go 配置
+- MySQL remains the source of truth
+- Elasticsearch is updated on problem create/update/delete
+- Qdrant problem vectors are updated through agent sync endpoints
 
-Go 主程序主要读取：
+### Full Reindex
 
-- [config/config.dev.yaml](/D:/beryl/letsgo/gojo/config/config.dev.yaml:1)
-
-通过：
-
-```powershell
-$env:APP_ENV="dev"
-```
-
-选择环境文件。
-
-同时支持环境变量覆盖，例如：
+If you need to rebuild the vector index from the current database snapshot:
 
 ```powershell
-$env:GOJO_SERVER_PORT="9090"
+docker compose run --rm agent python -m rag.index_problem_docs
 ```
 
----
+This command performs a full pass over problem data and writes vectors into Qdrant.
 
-## Docker / Python 配置
+### Search Demo
 
-Python agent 与 RAG 相关配置主要来自：
-
-- [`.env.example`](/D:/beryl/letsgo/gojo/.env.example:1)
-- [`.env`](/D:/beryl/letsgo/gojo/.env:1)
-
-这些值会被：
-
-- `docker-compose.yml`
-- Python `dotenv`
-
-共同使用。
-
----
-
-## RAG 与 Memory
-
-## 题目 RAG
-
-当前题目 RAG 使用：
-
-- DashScope `text-embedding-v3`
-- Qdrant
-
-### 题目文档结构
-
-每道题会整理成：
-
-- `document`
-- `metadata`
-
-示例：
-
-```json
-{
-  "problem_id": 3,
-  "document": "Title: 有序数组查找\nTags: 二分, 数组\nDescription: ...",
-  "metadata": {
-    "title": "有序数组查找",
-    "tags": ["二分", "数组"],
-    "submit_count": 12,
-    "accepted_count": 8,
-    "time_limit": 1000,
-    "memory_limit": 256
-  }
-}
-```
-
-### 初次全量导出与入库
+A small semantic retrieval demo is also available:
 
 ```powershell
-docker compose run --rm agent python rag/export_problem_docs.py --base-url http://host.docker.internal:8080
-docker compose run --rm agent python rag/index_problem_docs.py
+docker compose run --rm agent python -m rag.search_demo "two sum"
 ```
 
-### 语义检索 demo
+Problem vectors are written to Qdrant with `problem_id` as the point ID, so full reindex uses upsert semantics. Running it again updates existing points instead of appending duplicate entries for the same problem.
 
-```powershell
-docker compose run --rm agent python rag/search_demo.py "适合练二分边界处理的入门题"
-docker compose run --rm agent python rag/search_demo.py "适合 BFS 和 DFS 入门的图论题" --limit 3
-```
+## Authentication and Internal Trust Model
 
-### 当前同步方式
+The project uses JWT for user authentication.
 
-当前已经不是只靠手动全量重建索引。
+- Public login issues access token and refresh token
+- Protected APIs use bearer access tokens
+- Some streaming endpoints also accept `?token=` for browser-based SSE or WebSocket usage
+- Agent-facing internal APIs are protected and intended for service-to-service calls, not public clients
 
-现在的策略是：
+For study-plan execution, the Go worker generates an admin JWT dynamically before calling the Python agent, instead of depending on a long-lived fixed token for every runtime request.
 
-- 新增题目：自动同步到 Qdrant
-- 修改题目：自动同步到 Qdrant
-- 修改标签：自动同步到 Qdrant
-- 删除题目：自动从 Qdrant 删除
+## Important Runtime Notes
 
-也就是说，Go 侧题目变更后会主动通知 Python agent 做单题增量同步。
+- Redis is not optional. The backend will fail fast if Redis is unavailable.
+- Docker Desktop must be healthy before submitting code, otherwise sandbox compilation or runtime containers will fail.
+- The Python agent depends on outbound access to DeepSeek and DashScope.
+- Semantic retrieval can degrade gracefully to lexical retrieval, but the best recommendation quality depends on Qdrant and embeddings being available.
+- Direct manual deletion from MySQL is not recommended for problem data, because business-layer deletion also coordinates cache, search, and vector cleanup.
 
----
+## API Surface Summary
 
-## 文本 Memory
+### Public APIs
 
-当前 memory 是最轻量的非结构化版本。
+- auth: register, login, refresh, logout
+- problem browsing: list, detail, tags, ranking, search
+- user self-service: profile, my submissions
+- submission: submit code, query submission result, WebSocket updates
 
-### 实现方式
+### Protected User APIs
 
-- 复用现有 Qdrant 容器
-- 新建 `study_plan_memories` collection
-- 每次 `study_plan` 成功后，把输出文本写入 memory
-- 下次同一用户再请求时，用 `user_id + goal` 召回相关历史计划
+- AI analysis task creation and feedback
+- study-plan task mode APIs
+- chat session APIs for the conversational assistant
+- SSE turn streaming for AI responses
 
-### 当前特点
+### Admin APIs
 
-- 不是结构化记忆
-- 是 best-effort
-- memory 失败不会阻塞主业务
+- user ban and unban
+- problem CRUD
+- testcase CRUD
+- tag CRUD
+- problem-tag relation updates
+- analysis statistics
+- study-plan statistics
 
-### 适合理解成什么
+### Internal Agent Tool APIs
 
-这是一个“先有再强”的文本记忆层，主要作用是：
+- user AC history
+- failed submissions
+- tag statistics
+- candidate problem retrieval
+- problem detail lookup
 
-- 给后续推荐增加连续性
-- 让相近 goal 更容易承接上次规划
+## Production-Oriented Characteristics
 
----
+What makes this repository closer to an actual system than a classroom demo is not any single framework choice, but the shape of the runtime design:
 
-## 主要接口
+- asynchronous workers isolate slow tasks from request latency
+- judge execution is sandboxed and externalized to Docker
+- retrieval is split between lexical search and semantic search
+- AI interaction is session-based and stateful, not prompt-in prompt-out only
+- memory is layered into short-term compaction and long-term recall
+- data synchronization is coordinated through business services instead of ad hoc scripts
 
-## Go 公开接口
+## Future Extension Directions
 
-- `POST /api/register`
-- `POST /api/login`
-- `GET /api/problems`
-- `GET /api/problems/:id`
-- `GET /api/tags`
-- `GET /api/leaderboard`
-- `POST /api/problems/search`
+The current codebase is already a strong foundation for further evolution, for example:
 
-## Go 登录后接口
+- richer tool-routing and multi-agent orchestration for study guidance
+- stronger chunking strategies for problem knowledge beyond the current per-problem document model
+- hybrid reranking with additional metadata signals such as difficulty, acceptance rate, or user weakness tags
+- structured long-term memory extraction instead of purely text-oriented memory writes
+- more complete observability around agent decisions, queue latency, and retrieval quality
 
-- `GET /api/profile`
-- `POST /api/submit`
-- `GET /api/submissions/:id`
-- `GET /api/my-submissions`
-- `GET /api/ws`
+## License
 
-## Go 管理员接口
+No license file is currently included in this repository. If the project is intended for public distribution, add an explicit license before external release.
 
-- `POST /api/admin/problems`
-- `PUT /api/admin/problems/:id`
-- `DELETE /api/admin/problems/:id`
-- `POST /api/admin/tags`
-- `DELETE /api/admin/tags/:id`
-- `PUT /api/admin/problems/:id/tags`
-- `GET /api/admin/analysis/stats`
-- `GET /api/admin/study-plan/stats`
-
-## Go internal tool API
-
-这些接口主要给 Python agent 使用：
-
-- `GET /api/admin/agent/users/:id/ac-history`
-- `GET /api/admin/agent/users/:id/failed-submissions`
-- `GET /api/admin/agent/users/:id/tag-stats`
-- `GET /api/admin/agent/problems/candidates`
-- `GET /api/admin/agent/problems/:id`
-
-## Python agent 接口
-
-- `GET /ping`
-- `POST /study-plan/run`
-- `POST /rag/problems/sync`
-- `POST /rag/problems/delete`
-
----
-
-## 调试与排查
-
-## 1. `study_plan` 任务一直停在 `pending`
-
-先看 Go 启动日志是否有：
-
-```text
-starting study plan worker pool, workers=3
-```
-
-如果是：
-
-```text
-workers=0
-```
-
-说明 worker 没真正启动成功，通常是 `study_plan.worker_count` 配置没有读到。
-
----
-
-## 2. Python agent 没有输出 debug 日志
-
-如果 `.env` 已改成：
-
-```env
-AGENT_DEBUG=true
-```
-
-还需要执行：
-
-```powershell
-docker compose up -d --force-recreate agent
-```
-
-不要只执行：
-
-```powershell
-docker compose restart agent
-```
-
-因为 `restart` 不会重新读取 `.env`。
-
----
-
-## 3. 为什么同样的 goal，推荐结果有时不完全一样
-
-当前 `study_plan` 不是固定 pipeline，而是：
-
-- 手写 DeepSeek runtime
-- 模型自己决定是否调用 `candidate_problems`
-- 模型自己决定是否调用 `semantic_candidate_problems`
-- 结果还会受到 memory 命中的影响
-
-所以同样请求在不同上下文状态下，可能出现不同工具路径和不同候选题组合。
-
----
-
-## 4. 为什么“动态规划”有时搜不到 `DP`
-
-规则工具本质上仍是标签匹配，因此：
-
-- `动态规划`
-- `DP`
-
-默认不是同一个标签。
-
-但模型有时会自行做 query / tag 扩展，例如：
-
-- `["动态规划", "DP"]`
-- `动态规划入门基础题 适合初学者 简单DP`
-
-这时更容易命中对应题目。
-
----
-
-## 5. 如何查看 agent 实际调用了哪些工具
-
-```powershell
-docker compose logs -f agent
-```
-
-重点看这些日志：
-
-- `tool_call name=user_ac_history`
-- `tool_call name=candidate_problems`
-- `tool_call name=semantic_candidate_problems`
-- `memory hits=...`
-- `memory saved point_id=...`
-
----
-
-## 设计取舍
-
-当前实现里有几个明确取舍：
-
-- `study_plan` 主链没有继续使用 LangChain `create_agent`
-  - 原因是复杂远程 tool 场景下与 DeepSeek 协议兼容不够稳定
-- memory 先做成非结构化文本
-  - 先验证连续性价值
-  - 暂不引入更复杂的结构化长期记忆
-- RAG 先做单题增量同步
-  - 先保证可用
-  - 暂不拆分成独立索引 worker
-
-这些不是“漏做”，而是当前阶段的主动取舍。
-
----
-
-## 后续演进方向
-
-如果继续往更专业的形态走，下一步比较值得做的是：
-
-- 给候选题增加 `source`
-  - 区分 rule / semantic 的贡献
-- 给 `study_plan` 增加结构化 memory
-- 增加 query 别名归一化
-  - 例如 `动态规划 -> DP`
-- 增加更细的 tracing / replay
-- 增加自动化测试
-- 补完整部署文档
-
----
-
-## 说明
-
-- [`.env.example`](/D:/beryl/letsgo/gojo/.env.example:1) 可以提交
-- 真正的 [`.env`](/D:/beryl/letsgo/gojo/.env:1) 不应提交
-- `config/config.example.yaml` 可以提交
-- `config/config.dev.yaml` 不应提交
-
-提交代码前建议确认：
-
-- 没有把真实 key 提交到 Git
-- README 与当前代码一致
-- `go run .\cmd\server\main.go` 能正常启动
-- `docker compose up -d agent qdrant redis elasticsearch kibana` 能正常启动

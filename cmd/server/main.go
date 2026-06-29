@@ -81,6 +81,7 @@ func main() {
 		log.Fatalf("study plan worker init failed: %v", err)
 	}
 	spw.StartWorkerPool(config.GlobalConfig.StudyPlan.WorkerCount)
+	spw.StartTurnWorkerPool(config.GlobalConfig.StudyPlan.WorkerCount)
 
 	uHandler := userHandler.NewUserHandler(userService)
 	pHandler := problemHandler.NewProblemHandler(problemService)
