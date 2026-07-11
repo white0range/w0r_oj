@@ -5,17 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gojo/infrastructure/search"  // 你的 ES 客户端初始化包
-	"gojo/internal/problem/model" // 假设 EsProblem 在这里
 	"strconv"
+
+	"gojo/infrastructure/search"
+	"gojo/internal/problem/model"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// 1. 定义 ES 专属仓管接口
 type ProblemSearchRepository interface {
 	SearchProblems(ctx context.Context, keyword string, tags []string) (int64, []map[string]interface{}, error)
 	UpsertProblemToES(ctx context.Context, doc model.EsProblem) error
+	DeleteProblemFromES(ctx context.Context, problemID uint) error
 }
 
 type problemSearchRepoES struct{}
@@ -24,7 +25,6 @@ func NewProblemSearchRepository() ProblemSearchRepository {
 	return &problemSearchRepoES{}
 }
 
-// 2. 搜索落地实现 (把拼接 JSON 和解析 Hits 全部封死在这里)
 func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string, tags []string) (int64, []map[string]interface{}, error) {
 	must := []map[string]interface{}{}
 	filter := []map[string]interface{}{}
@@ -49,7 +49,9 @@ func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string
 	}
 
 	var buf bytes.Buffer
-	json.NewEncoder(&buf).Encode(query)
+	if err := json.NewEncoder(&buf).Encode(query); err != nil {
+		return 0, nil, err
+	}
 
 	res, err := search.EsClient.Search(
 		search.EsClient.Search.WithContext(ctx),
@@ -63,11 +65,13 @@ func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return 0, nil, fmt.Errorf("ES 返回错误: %s", res.String())
+		return 0, nil, fmt.Errorf("ES returned error: %s", res.String())
 	}
 
 	var esResult map[string]interface{}
-	json.NewDecoder(res.Body).Decode(&esResult)
+	if err := json.NewDecoder(res.Body).Decode(&esResult); err != nil {
+		return 0, nil, err
+	}
 
 	hits := esResult["hits"].(map[string]interface{})["hits"].([]interface{})
 	var resultData []map[string]interface{}
@@ -81,9 +85,12 @@ func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string
 	return total, resultData, nil
 }
 
-// 3. 写入 ES 落地实现
 func (r *problemSearchRepoES) UpsertProblemToES(ctx context.Context, doc model.EsProblem) error {
-	body, _ := json.Marshal(doc)
+	body, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+
 	req := esapi.IndexRequest{
 		Index:      "problems",
 		DocumentID: strconv.Itoa(int(doc.ID)),
@@ -98,7 +105,29 @@ func (r *problemSearchRepoES) UpsertProblemToES(ctx context.Context, doc model.E
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("ES 拒绝写入: %s", res.String())
+		return fmt.Errorf("ES rejected upsert: %s", res.String())
+	}
+	return nil
+}
+
+func (r *problemSearchRepoES) DeleteProblemFromES(ctx context.Context, problemID uint) error {
+	req := esapi.DeleteRequest{
+		Index:      "problems",
+		DocumentID: strconv.Itoa(int(problemID)),
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, search.EsClient)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		return nil
+	}
+	if res.IsError() {
+		return fmt.Errorf("ES delete failed: %s", res.String())
 	}
 	return nil
 }

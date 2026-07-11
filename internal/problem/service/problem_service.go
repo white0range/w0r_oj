@@ -75,20 +75,7 @@ func (s *ProblemService) CreateProblem(ctx context.Context, req dto.ProblemReque
 		return nil, err
 	}
 
-	tagNames := make([]string, 0, len(problem.Tags))
-	for _, t := range problem.Tags {
-		tagNames = append(tagNames, t.Name)
-	}
-
-	if err := s.searchRepo.UpsertProblemToES(ctx, model.EsProblem{
-		ID:          problem.ID,
-		Title:       problem.Title,
-		Description: problem.Description,
-		Tags:        tagNames,
-	}); err != nil {
-		log.Printf("sync problem %d to es failed: %v", problem.ID, err)
-	}
-
+	s.syncProblemToESDocument(ctx, &problem)
 	s.clearProblemListCache(ctx, "create")
 	s.syncProblemToRAG(ctx, problem.ID)
 	return &problem, nil
@@ -240,6 +227,7 @@ func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, re
 
 	s.clearProblemDetailCache(ctx, problemID, "update")
 	s.clearProblemListCache(ctx, "update")
+	s.syncProblemToESByStringID(ctx, problemID)
 	s.syncProblemToRAGByStringID(ctx, problemID)
 	return nil
 }
@@ -251,6 +239,7 @@ func (s *ProblemService) DeleteProblem(ctx context.Context, problemID string) er
 
 	s.clearProblemDetailCache(ctx, problemID, "delete")
 	s.clearProblemListCache(ctx, "delete")
+	s.deleteProblemFromES(ctx, problemID)
 	s.deleteProblemFromRAG(ctx, problemID)
 	return nil
 }
@@ -262,6 +251,7 @@ func (s *ProblemService) UpdateProblemTags(ctx context.Context, problemID string
 
 	s.clearProblemDetailCache(ctx, problemID, "update tags")
 	s.clearProblemListCache(ctx, "update tags")
+	s.syncProblemToESByStringID(ctx, problemID)
 	s.syncProblemToRAGByStringID(ctx, problemID)
 	return nil
 }
@@ -287,21 +277,9 @@ func (s *ProblemService) SyncAllProblemsToES(ctx context.Context) error {
 	fmt.Printf("preparing to sync %d problems to elasticsearch\n", len(problems))
 	successCount := 0
 
-	for _, p := range problems {
-		tagNames := make([]string, 0, len(p.Tags))
-		for _, t := range p.Tags {
-			tagNames = append(tagNames, t.Name)
-		}
-
-		doc := model.EsProblem{
-			ID:          p.ID,
-			Title:       p.Title,
-			Description: p.Description,
-			Tags:        tagNames,
-		}
-
-		if err := s.searchRepo.UpsertProblemToES(ctx, doc); err != nil {
-			log.Printf("sync problem %d to es failed: %v", p.ID, err)
+	for i := range problems {
+		if err := s.searchRepo.UpsertProblemToES(ctx, buildESProblemDoc(&problems[i])); err != nil {
+			log.Printf("sync problem %d to es failed: %v", problems[i].ID, err)
 			continue
 		}
 		successCount++
@@ -309,6 +287,48 @@ func (s *ProblemService) SyncAllProblemsToES(ctx context.Context) error {
 
 	fmt.Printf("elasticsearch sync finished, succeeded: %d\n", successCount)
 	return nil
+}
+
+func buildESProblemDoc(problem *model.Problem) model.EsProblem {
+	tagNames := make([]string, 0, len(problem.Tags))
+	for _, t := range problem.Tags {
+		tagNames = append(tagNames, t.Name)
+	}
+
+	return model.EsProblem{
+		ID:          problem.ID,
+		Title:       problem.Title,
+		Description: problem.Description,
+		Tags:        tagNames,
+	}
+}
+
+func (s *ProblemService) syncProblemToESDocument(ctx context.Context, problem *model.Problem) {
+	if err := s.searchRepo.UpsertProblemToES(ctx, buildESProblemDoc(problem)); err != nil {
+		log.Printf("sync problem %d to es failed: %v", problem.ID, err)
+	}
+}
+
+func (s *ProblemService) syncProblemToESByStringID(ctx context.Context, problemID string) {
+	problem, err := s.repo.GetProblemByID(ctx, problemID)
+	if err != nil {
+		log.Printf("load problem %s for es sync failed: %v", problemID, err)
+		return
+	}
+
+	s.syncProblemToESDocument(ctx, problem)
+}
+
+func (s *ProblemService) deleteProblemFromES(ctx context.Context, problemID string) {
+	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
+	if err != nil {
+		log.Printf("skip es delete because problem id is invalid: %q err=%v", problemID, err)
+		return
+	}
+
+	if err := s.searchRepo.DeleteProblemFromES(ctx, uint(id)); err != nil {
+		log.Printf("delete problem %d from es failed: %v", id, err)
+	}
 }
 
 func (s *ProblemService) syncProblemToRAGByStringID(ctx context.Context, problemID string) {
