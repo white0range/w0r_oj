@@ -1,269 +1,288 @@
-﻿# Gojo OJ
+# Gojo OJ
 
-Gojo OJ is a full-stack algorithm training platform that combines online judging, asynchronous evaluation, search and retrieval, and AI-assisted study workflows into a single system. The repository is organized around a Go backend as the source of truth, a Vue frontend for user interaction, and a Python agent service for conversational guidance, retrieval augmentation, and memory.
+Gojo OJ 是一个全栈算法训练平台，将在线判题、异步任务处理、搜索检索和 AI 辅助学习整合到同一套系统中。Go 后端是业务数据的唯一事实来源，Vue 前端负责交互，Python Agent 服务负责对话式引导、检索增强和学习记忆。
 
-Unlike a toy OJ that only stores problems and returns verdicts, this project already covers the core runtime concerns of a real system: queue-based judging, cache invalidation, search indexing, semantic retrieval, session-oriented AI interaction, and cross-service coordination.
+这不是一个只保存题目并返回结果的演示型 OJ。项目已经覆盖真实系统的关键运行问题，包括队列判题、缓存失效、搜索索引、语义检索、会话式 AI、跨服务同步与故障补偿。
 
-## Highlights
+## 亮点
 
-- Online Judge for code submission, compilation, sandboxed execution, and verdict generation
-- Redis-backed asynchronous workers for judging, AI analysis, and study-plan turns
-- Problem management with tags, test cases, admin CRUD, and cache invalidation
-- Elasticsearch-based lexical search for title, description, and tag filtering
-- Qdrant-based vector retrieval for problem recommendations and long-term memory
-- Conversational AI study assistant with session context, short-term summary compression, and long-term memory recall
-- Incremental synchronization from problem CRUD to both search index and RAG knowledge base
-- WebSocket and SSE based result delivery for submissions and AI turn streaming
+- 支持代码提交、编译、沙箱执行与判题结果生成的在线判题系统
+- 基于 Redis 的判题、AI 分析、学习计划和异步数据同步后台
+- 题目、标签、测试用例与后台管理 CRUD，以及现有缓存失效
+- 基于 Elasticsearch 的标题、描述和标签全文检索
+- 基于 Qdrant 的题目向量检索和长期学习记忆
+- 支持会话上下文、短期摘要压缩和长期记忆召回的 AI 学习助手
+- 题目变更到 Elasticsearch、RAG 知识库和排行榜的可重试最终一致性同步
+- WebSocket 推送判题结果，SSE 推送 AI 对话轮次状态
 
-## System Overview
+## 系统概览
 
-The project is split into three runtime layers:
+项目由三层运行组件组成：
 
-1. Go backend
-   - Owns users, problems, tags, test cases, submissions, ranking, chat sessions, and study-plan tasks
-   - Exposes public APIs, admin APIs, WebSocket notifications, and internal tool APIs for the Python agent
-   - Runs worker pools for judge, analysis, and study-plan processing
+1. Go 后端
+   - 管理用户、题目、标签、测试用例、提交、排行榜、聊天会话和学习计划任务
+   - 提供公开 API、管理端 API、WebSocket 通知和 Python Agent 内部工具 API
+   - 运行判题、分析、学习计划及异步同步 Worker
 
-2. Python agent service
-   - Provides the AI execution layer through FastAPI + LangChain + DeepSeek
-   - Handles conversational study-plan turns, session summarization, problem vector sync, and semantic retrieval
-   - Uses Qdrant for both problem embeddings and user long-term memory
+2. Python Agent 服务
+   - 使用 FastAPI、LangChain 和 DeepSeek 提供 AI 能力
+   - 处理学习计划对话、会话摘要、题目向量同步和语义检索
+   - 使用 Qdrant 存储题目向量和用户长期记忆
 
-3. Frontend application
-   - Built with Vue 3 + Vite
-   - Covers OJ usage, admin console, ranking, submissions, and the AI study workspace
+3. 前端应用
+   - 基于 Vue 3 和 Vite
+   - 覆盖 OJ 做题、后台管理、排行榜、提交记录和 AI 学习工作区
 
-Supporting infrastructure is provided through Docker Compose:
+Docker Compose 提供以下基础设施：
 
-- Redis: queues and cache
-- Elasticsearch: lexical retrieval
-- Kibana: search inspection
-- Qdrant: vector database
-- Agent: Python AI service
+- Redis：队列、旁路缓存和异步同步任务
+- Elasticsearch：关键词检索
+- Kibana：Elasticsearch 查询与索引检查
+- Qdrant：向量数据库
+- Agent：Python AI 服务
 
-MySQL is the primary relational store and is initialized by GORM auto-migration during backend startup.
+MySQL 是主关系型数据库，Go 后端启动时会通过 GORM AutoMigrate 初始化表结构。
 
-## Architecture
+## 架构
 
-```text
-Vue 3 Frontend
+~~~text
+Vue 3 前端
     |
     v
 Go API Server (Gin)
     |- MySQL
     |- Redis
     |- Elasticsearch
-    |- Docker Engine (judge sandbox)
+    |- Docker Engine（判题沙箱）
     |
-    +--> Judge Worker Pool
-    +--> Analysis Worker Pool
-    +--> Study Plan Worker Pool
-    +--> Chat Turn Worker Pool
+    +--> 判题 Worker Pool
+    +--> AI 分析 Worker Pool
+    +--> 学习计划 Worker Pool
+    +--> 聊天轮次 Worker Pool
+    +--> 数据同步 Worker Pool
               |
               v
-       Python Agent (FastAPI + LangChain)
+       Python Agent（FastAPI + LangChain）
               |
               +--> DeepSeek LLM
               +--> DashScope Embeddings
               +--> Qdrant
-```
+~~~
 
-## Core Workflows
+## 核心流程
 
-### 1. Submission and Judging
+### 1. 提交与判题
 
-The judging pipeline is queue-based and asynchronous.
+判题采用异步队列流程：
 
-1. The user submits code through `POST /api/submit`.
-2. The backend creates a submission record and pushes a task into Redis.
-3. Judge workers consume the queue and invoke `internal/judge/service`.
-4. The service compiles user code inside a Docker-based sandbox.
-5. Test cases are executed one by one in an isolated runtime container.
-6. The system compares outputs and writes the final verdict back to MySQL.
-7. Submission updates are pushed to the frontend through WebSocket.
+1. 用户通过 POST /api/submit 提交代码。
+2. 后端创建提交记录，并将任务推入 Redis。
+3. 判题 Worker 消费队列，调用 internal/judge/service。
+4. 服务在 Docker 沙箱内编译用户代码。
+5. 测试用例在受限制的运行容器中逐个执行。
+6. 系统比较输出并将最终结果写回 MySQL。
+7. 结果通过 WebSocket 推送到前端。
 
-Supported verdicts include `AC`, `WA`, `RE`, `TLE`, `MLE`, `CE`, and `SE`.
+支持的结果包括 AC、WA、RE、TLE、MLE、CE 和 SE。
 
-### 2. Problem Search and Retrieval
+判题完成后还会失效题目缓存，并异步同步题目统计数据和用户排行榜分数。
 
-The project uses a two-layer retrieval model.
+### 2. 题目搜索与检索
 
-1. Lexical retrieval
-   - Implemented with Elasticsearch
-   - Supports title and description matching, plus tag filtering
-   - Used directly by the problem search API
+项目采用两层检索模型：
 
-2. Semantic retrieval
-   - Implemented with DashScope embeddings + Qdrant
-   - Used by the Python agent when looking for related problems by intent rather than exact wording
+1. 关键词检索
+   - 由 Elasticsearch 实现
+   - 支持标题、描述匹配和标签过滤
+   - 直接服务于题目搜索 API
 
-3. Hybrid retrieval
-   - Implemented in the agent layer
-   - Expands and normalizes the user query, merges lexical and semantic candidates, and reranks them
-   - If semantic embedding fails, the agent falls back to lexical retrieval instead of failing the whole turn
+2. 语义检索
+   - 由 DashScope Embedding 和 Qdrant 实现
+   - Python Agent 根据用户意图而非关键词查找相关题目
 
-### 3. Conversational AI Study Assistant
+3. 混合检索
+   - 在 Agent 层实现
+   - 扩展和标准化查询，合并关键词与语义候选，再进行重排序
+   - 向量化失败时回退到关键词检索，不会导致整个对话失败
 
-The current study assistant is session-based rather than one-shot.
+### 3. 对话式 AI 学习助手
 
-1. The frontend creates a chat session with `POST /api/study-plan/sessions`.
-2. Each user message creates a pending chat turn in MySQL and enqueues a Redis task.
-3. Chat turn workers fetch the turn, prepare context, and call the Python agent.
-4. The agent decides whether to use tools such as:
-   - user AC history
-   - failed submission history
-   - tag statistics
-   - rule-based candidate problems
-   - semantic candidate problems
-   - hybrid candidate problems
-5. The worker stores the assistant reply and streams turn status via SSE.
+学习助手是会话式系统，而不是一次性问答：
 
-This gives the system two capabilities at the same time:
+1. 前端通过 POST /api/study-plan/sessions 创建聊天会话。
+2. 每条用户消息都会在 MySQL 创建待处理聊天轮次，并写入 Redis 队列。
+3. 聊天 Worker 读取轮次、构建上下文并调用 Python Agent。
+4. Agent 可使用用户 AC 历史、失败提交历史、标签统计和规则、语义、混合候选题目等工具。
+5. Worker 保存回复，并通过 SSE 推送轮次状态。
 
-- practical recommendation of next problems to solve
-- ordinary conversation-style algorithm Q&A in the same session
+该设计同时支持推荐下一道适合练习的题目，以及在同一会话中进行普通算法问答。
 
-### 4. Short-Term and Long-Term Memory
+### 4. 短期与长期记忆
 
-The AI workflow uses two memory layers.
+短期记忆：
 
-Short-term memory:
-- Stored in MySQL chat tables
-- Recent messages are kept in an active window
-- Older messages are archived and merged into a session summary
-- The current worker window size is 8 recent messages
+- 存储在 MySQL 聊天表中
+- 最近消息保留在活动窗口
+- 较早消息归档并压缩为会话摘要
+- 当前 Worker 窗口保留最近 8 条消息
 
-Long-term memory:
-- Stored in Qdrant collection `study_plan_memories`
-- Saves durable user-specific learning context after successful turns
-- Recalled before LLM invocation as auxiliary context for future turns
+长期记忆：
 
-### 5. Problem Knowledge Synchronization
+- 存储在 Qdrant 集合 study_plan_memories
+- 在成功轮次后保存稳定的用户学习上下文
+- 在下次调用 LLM 前召回，作为辅助上下文
 
-Problem data is synchronized incrementally when admins change the source of truth in MySQL.
+### 5. 题目知识与排行榜同步
 
-- Problem create/update/tag update triggers:
-  - Redis cache invalidation
-  - Elasticsearch document upsert
-  - Python agent RAG sync endpoint call
-- Problem delete triggers:
-  - relational cleanup through backend business logic
-  - Elasticsearch delete
-  - Python agent vector delete
+MySQL 是题目、统计数据和用户解题数的唯一事实来源。业务层修改成功后，会先失效当前 Redis 缓存，再投递异步同步任务。
 
-This design keeps search and vector knowledge aligned with the business layer instead of encouraging direct database edits.
+~~~text
+MySQL 业务提交
+   ↓
+sync:pending
+   ↓
+ES / RAG / Leaderboard Handler
+   ├─ 成功：确认任务
+   └─ 失败：延迟重试，超限后进入死信队列
+~~~
 
-## Tech Stack
+同步任务使用以下 Redis 键：
 
-### Backend
+- sync:pending：待执行任务
+- sync:processing：已被 Worker 领取的任务
+- sync:processing:leases：任务租约
+- sync:retry_at：按时间调度的重试任务
+- sync:dead_letter：超过重试次数的任务
+
+覆盖的业务事件包括：
+
+- 题目创建、更新、删除和标签更新
+- 测试用例新增和删除
+- 标签删除导致的题目标签关系变化
+- 判题完成后的提交数、通过数和 RAG 统计更新
+- 用户首次 AC 后的排行榜同步
+
+同步操作按最终状态写入，具备幂等性：
+
+- Elasticsearch 与 RAG 使用题目 ID 覆盖写或删除
+- 排行榜按 MySQL 中 solved_count * 10 设置 ZSet 分数，而非重复累加
+- Worker 崩溃后的过期租约会将任务重新投递
+- 失败任务按退避策略重试，超过上限后进入死信队列
+- 服务启动和每 30 分钟会执行题目与排行榜全量校准
+
+## 技术栈
+
+### 后端
 
 - Go 1.26
 - Gin
 - GORM + MySQL
 - Redis
 - Docker SDK for Go
-- Elasticsearch v8 client
-- JWT authentication
+- Elasticsearch v8 Client
+- JWT
 - WebSocket + SSE
 
-### AI and Retrieval
+### AI 与检索
 
 - FastAPI
 - LangChain
-- DeepSeek chat model
-- DashScope embedding model
-- Qdrant vector database
+- DeepSeek Chat Model
+- DashScope Embedding Model
+- Qdrant
 
-### Frontend
+### 前端
 
 - Vue 3
 - Vue Router
 - Axios
 - Vite
 
-## Repository Structure
+## 仓库结构
 
-```text
-cmd/server/                  Go application entrypoint
-config/                      YAML configuration files and config loader
-infrastructure/              MySQL, Redis, Elasticsearch, WebSocket, Qdrant config
-internal/app/                route registration and middleware
-internal/problem/            problem, tag, testcase, search modules
-internal/submission/         submission creation and query
-internal/judge/              sandbox, Docker integration, judge service, workers
-internal/analysis/           AI incorrect-submission analysis pipeline
-internal/study_plan/         task mode + chat mode study-plan domain
-pkg/                         shared packages such as response, jwt, ecode, ai
-agent/                       Python FastAPI agent service
-agent/rag/                   vector indexing, retrieval, and memory helpers
-vue/                         Vue frontend application
-docker-compose.yml           local infra and agent runtime definition
-```
+~~~text
+cmd/server/                  Go 应用入口
+cmd/seed_problems/          题目种子数据命令
+config/                      YAML 配置与配置加载器
+infrastructure/              MySQL、Redis、Elasticsearch、WebSocket 配置
+internal/app/                路由注册与中间件
+internal/problem/            题目、标签、测试用例、搜索模块
+internal/submission/         提交创建与查询
+internal/judge/              沙箱、Docker 集成、判题服务与 Worker
+internal/analysis/           AI 错误提交分析流程
+internal/study_plan/         任务模式与聊天模式学习计划领域
+internal/syncer/             ES、RAG 与排行榜异步同步后台
+pkg/                         response、jwt、ecode、ai 等共享包
+agent/                       Python FastAPI Agent 服务
+agent/rag/                   向量索引、检索与记忆工具
+vue/                         Vue 前端应用
+docker-compose.yml           本地基础设施与 Agent 运行定义
+~~~
 
-## Key Domain Models
+## 核心领域模型
 
-The relational model is centered around the following entities:
+关系型数据主要围绕以下实体：
 
-- `users`
-- `problems`
-- `tags`
-- `testcases`
-- `submissions`
-- `analysis_tasks` and `analysis_feedback`
-- `study_plan_tasks` and `study_plan_feedback`
-- `chat_sessions`, `chat_messages`, and `chat_turns`
+- users
+- problems
+- tags
+- testcases
+- submissions
+- analysis_tasks 和 analysis_feedback
+- study_plan_tasks 和 study_plan_feedback
+- chat_sessions、chat_messages 和 chat_turns
 
-These tables are created automatically by `AutoMigrate` during backend startup.
+这些表会在后端启动时由 AutoMigrate 自动创建或迁移。
 
-## Local Development
+## 本地开发
 
-### 1. Prerequisites
+### 1. 前置条件
 
-Install the following locally:
+请先安装：
 
 - Go 1.26+
 - Node.js 18+
 - Docker Desktop
 - MySQL 8+
 
-The backend depends on a running Docker Engine because code compilation and execution are performed in containers.
+后端依赖可用的 Docker Engine，因为用户代码的编译和执行均在容器中完成。
 
-### 2. Create the Database
+### 2. 创建数据库
 
-Create an empty MySQL database, for example:
+创建一个空的 MySQL 数据库，例如：
 
-```sql
+~~~sql
 CREATE DATABASE w0roj CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
+~~~
 
-You do not need to create tables manually. The backend will auto-migrate schema on startup.
+不需要手动建表。后端启动时会自动迁移数据库结构。
 
-### 3. Prepare Backend Config
+### 3. 准备后端配置
 
-Copy the example file:
+复制示例配置：
 
-```powershell
+~~~powershell
 Copy-Item config\config.example.yaml config\config.dev.yaml
-```
+~~~
 
-Set `APP_ENV=dev`, then edit `config/config.dev.yaml` with your local values.
+设置 APP_ENV=dev，然后在 config/config.dev.yaml 中填写本地配置。
 
-Typical fields you need to confirm:
+通常需要确认：
 
-- `sql.dsn`
-- `redis.addr`
-- `jwt.secret`
-- `ai.api_key`
-- `study_plan.agent_base_url`
-- `elasticsearch.addresses`
+- sql.dsn
+- redis.addr
+- jwt.secret
+- ai.api_key
+- study_plan.agent_base_url
+- elasticsearch.addresses
 
-### 4. Prepare Root `.env` for Docker Compose
+### 4. 准备 Docker Compose 根目录 .env
 
-Create or update the repository root `.env` file. This file is mainly consumed by the Python agent container.
+在仓库根目录创建或更新 .env。该文件主要由 Python Agent 容器读取。
 
-Required fields:
+必填项：
 
-```env
+~~~env
 DEEPSEEK_API_KEY=your_deepseek_api_key
 DEEPSEEK_API_BASE=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro
@@ -275,157 +294,160 @@ QDRANT_URL=http://qdrant:6333
 MEMORY_COLLECTION=study_plan_memories
 MEMORY_TOP_K=3
 AGENT_DEBUG=true
-```
+~~~
 
-Optional field:
+可选项：
 
-```env
+~~~env
 EXPORT_API_TOKEN=
-```
+~~~
 
-`EXPORT_API_TOKEN` is only needed for some standalone export scripts and is not part of the normal online runtime path.
+EXPORT_API_TOKEN 仅供部分独立导出脚本使用，不属于正常在线运行链路。
 
-### 5. Start Infrastructure and Agent
+### 5. 启动基础设施和 Agent
 
-```powershell
+~~~powershell
 docker compose up -d --build
-```
+~~~
 
-Default ports:
+默认端口：
 
-- `8000`: Python agent
-- `6379`: Redis
-- `9200`: Elasticsearch
-- `5601`: Kibana
-- `6333`: Qdrant HTTP
-- `6334`: Qdrant gRPC
+- 8000：Python Agent
+- 6379：Redis
+- 9200：Elasticsearch
+- 5601：Kibana
+- 6333：Qdrant HTTP
+- 6334：Qdrant gRPC
 
-If port `5601` is already occupied on your machine, adjust the host-side mapping in `docker-compose.yml`, for example `5602:5601`.
+如果本机端口 5601 已被占用，可在 docker-compose.yml 中修改宿主机映射，例如改成 5602:5601。
 
-### 6. Start the Go Backend
+### 6. 启动 Go 后端
 
-```powershell
+~~~powershell
 $env:APP_ENV="dev"
 go run .\cmd\server\main.go
-```
+~~~
 
-The API server listens on port `8080` by default.
+API 服务默认监听 8080 端口。
 
-### 7. Start the Frontend
+### 7. 启动前端
 
-```powershell
+~~~powershell
 cd vue
 npm install
 npm run dev
-```
+~~~
 
-The frontend uses `/api` as its base path and expects the Go backend to be reachable locally.
+前端以 /api 作为基础路径，并要求本地可访问 Go 后端。
 
-## Search, RAG, and Rebuild Operations
+## 搜索、RAG 和重建操作
 
-### Incremental Sync
+### 增量同步
 
-Normal admin operations already trigger incremental synchronization automatically:
+正常的管理端操作会自动触发增量同步：
 
-- MySQL remains the source of truth
-- Elasticsearch is updated on problem create/update/delete
-- Qdrant problem vectors are updated through agent sync endpoints
+- MySQL 始终是唯一事实来源
+- 题目变更会失效相关 Redis 缓存
+- Elasticsearch 与 Qdrant/RAG 通过异步任务最终追平 MySQL
+- 同步失败会按退避策略自动重试
 
-### Full Reindex
+### 全量重建向量索引
 
-If you need to rebuild the vector index from the current database snapshot:
+如需使用当前数据库快照重建向量索引：
 
-```powershell
+~~~powershell
 docker compose run --rm agent python -m rag.index_problem_docs
-```
+~~~
 
-This command performs a full pass over problem data and writes vectors into Qdrant.
+该命令遍历全部题目并将向量写入 Qdrant。
 
-### Search Demo
+### 搜索示例
 
-A small semantic retrieval demo is also available:
+提供了一个简单的语义检索演示：
 
-```powershell
+~~~powershell
 docker compose run --rm agent python -m rag.search_demo "two sum"
-```
+~~~
 
-Problem vectors are written to Qdrant with `problem_id` as the point ID, so full reindex uses upsert semantics. Running it again updates existing points instead of appending duplicate entries for the same problem.
+题目向量以 problem_id 作为 Qdrant Point ID，因此全量重建采用 upsert 语义。重复执行会更新已有题目，而不会创建同一题目的重复向量。
 
-## Authentication and Internal Trust Model
+## 认证与内部信任模型
 
-The project uses JWT for user authentication.
+项目使用 JWT 进行用户认证：
 
-- Public login issues access token and refresh token
-- Protected APIs use bearer access tokens
-- Some streaming endpoints also accept `?token=` for browser-based SSE or WebSocket usage
-- Agent-facing internal APIs are protected and intended for service-to-service calls, not public clients
+- 登录成功后签发 Access Token 和 Refresh Token
+- 受保护 API 使用 Bearer Access Token
+- 部分流式接口支持 ?token=，方便浏览器使用 SSE 或 WebSocket
+- 面向 Agent 的内部 API 仅用于服务间调用，不应暴露给公共客户端
 
-For study-plan execution, the Go worker generates an admin JWT dynamically before calling the Python agent, instead of depending on a long-lived fixed token for every runtime request.
+执行学习计划时，Go Worker 会动态生成管理员 JWT 再调用 Python Agent，而不是在所有运行时请求中依赖固定且长期有效的 Token。
 
-## Important Runtime Notes
+## 重要运行说明
 
-- Redis is not optional. The backend will fail fast if Redis is unavailable.
-- Docker Desktop must be healthy before submitting code, otherwise sandbox compilation or runtime containers will fail.
-- The Python agent depends on outbound access to DeepSeek and DashScope.
-- Semantic retrieval can degrade gracefully to lexical retrieval, but the best recommendation quality depends on Qdrant and embeddings being available.
-- Direct manual deletion from MySQL is not recommended for problem data, because business-layer deletion also coordinates cache, search, and vector cleanup.
+- Redis 不是可选依赖。Redis 不可用时后端会快速失败。
+- 提交代码前必须确认 Docker Desktop 正常运行，否则编译或执行沙箱容器会失败。
+- Python Agent 需要能够访问 DeepSeek 和 DashScope。
+- Qdrant 或 Embedding 不可用时，语义检索会退化到关键词检索；但推荐质量依赖 Qdrant 和 Embedding。
+- 不建议直接手动修改或删除 MySQL 中的题目数据，应通过业务 API 保证缓存、搜索索引和向量数据同步。
+- 可通过检查 sync:dead_letter 定位超过重试上限的同步任务。
 
-## API Surface Summary
+## API 概览
 
-### Public APIs
+### 公开 API
 
-- auth: register, login, refresh, logout
-- problem browsing: list, detail, tags, ranking, search
-- user self-service: profile, my submissions
-- submission: submit code, query submission result, WebSocket updates
+- 认证：注册、登录、刷新 Token、退出登录
+- 题目浏览：列表、详情、标签、排行榜、搜索
+- 用户自助：个人资料、我的提交
+- 提交：提交代码、查询提交结果、WebSocket 更新
 
-### Protected User APIs
+### 受保护的用户 API
 
-- AI analysis task creation and feedback
-- study-plan task mode APIs
-- chat session APIs for the conversational assistant
-- SSE turn streaming for AI responses
+- AI 分析任务创建与结果查询
+- 学习计划任务模式 API
+- 对话式学习助手的聊天会话 API
+- AI 回复的 SSE 轮次流
 
-### Admin APIs
+### 管理员 API
 
-- user ban and unban
-- problem CRUD
-- testcase CRUD
-- tag CRUD
-- problem-tag relation updates
-- analysis statistics
-- study-plan statistics
+- 用户封禁与解封
+- 题目 CRUD
+- 测试用例 CRUD
+- 标签 CRUD
+- 题目标签关系更新
+- 分析统计
+- 学习计划统计
 
-### Internal Agent Tool APIs
+### Agent 内部工具 API
 
-- user AC history
-- failed submissions
-- tag statistics
-- candidate problem retrieval
-- problem detail lookup
+- 用户 AC 历史
+- 失败提交记录
+- 标签统计
+- 候选题目检索
+- 题目详情查询
 
-## Production-Oriented Characteristics
+## 面向生产的特征
 
-What makes this repository closer to an actual system than a classroom demo is not any single framework choice, but the shape of the runtime design:
+这个仓库比课堂演示更接近真实系统，不在于单一框架，而在于运行时设计：
 
-- asynchronous workers isolate slow tasks from request latency
-- judge execution is sandboxed and externalized to Docker
-- retrieval is split between lexical search and semantic search
-- AI interaction is session-based and stateful, not prompt-in prompt-out only
-- memory is layered into short-term compaction and long-term recall
-- data synchronization is coordinated through business services instead of ad hoc scripts
+- 异步 Worker 将慢任务与请求延迟隔离
+- 判题执行在 Docker 沙箱中运行
+- 检索分为关键词检索与语义检索
+- AI 使用有状态、会话式交互，而非单次 Prompt 输入输出
+- 记忆分为短期压缩和长期召回
+- 业务数据通过统一同步后台协调到缓存、搜索、RAG 与排行榜
+- 失败同步支持租约恢复、重试、死信与周期性校准
 
-## Future Extension Directions
+## 后续扩展方向
 
-The current codebase is already a strong foundation for further evolution, for example:
+当前代码库已经具备进一步演进的基础，例如：
 
-- richer tool-routing and multi-agent orchestration for study guidance
-- stronger chunking strategies for problem knowledge beyond the current per-problem document model
-- hybrid reranking with additional metadata signals such as difficulty, acceptance rate, or user weakness tags
-- structured long-term memory extraction instead of purely text-oriented memory writes
-- more complete observability around agent decisions, queue latency, and retrieval quality
+- 更丰富的工具路由和多 Agent 学习引导
+- 除按题目文档外，更细粒度的题目知识分块策略
+- 结合难度、通过率和用户薄弱标签等元数据的混合重排序
+- 结构化长期记忆提取，而非仅保存文本记忆
+- 增强 Agent 决策、队列延迟、死信任务和检索质量的可观测性
+- 使用 MySQL Outbox 或删除墓碑，进一步覆盖 Redis 投递失败时的删除同步边界
 
 ## License
 
-No license file is currently included in this repository. If the project is intended for public distribution, add an explicit license before external release.
-
+仓库当前未包含 License 文件。如计划公开发布，请在对外发布前添加明确的开源许可证。
