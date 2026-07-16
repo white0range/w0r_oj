@@ -1,33 +1,28 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
-	"gojo/config"
 	"gojo/infrastructure/cache"
+	"gojo/internal/problem/cacheutil"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/model"
 	"gojo/internal/problem/repository"
+	"gojo/internal/syncer"
 )
 
 type ProblemService struct {
 	repo       repository.ProblemRepository
 	searchRepo repository.ProblemSearchRepository
+	syncer     syncer.Producer
 }
 
-type ragProblemSyncRequest struct {
-	ProblemID uint `json:"problem_id"`
-}
-
-func NewProblemService(r repository.ProblemRepository, sr repository.ProblemSearchRepository) *ProblemService {
+func NewProblemService(r repository.ProblemRepository, sr repository.ProblemSearchRepository, producer syncer.Producer) *ProblemService {
 	return &ProblemService{
 		repo:       r,
 		searchRepo: sr,
@@ -75,9 +70,8 @@ func (s *ProblemService) CreateProblem(ctx context.Context, req dto.ProblemReque
 		return nil, err
 	}
 
-	s.syncProblemToESDocument(ctx, &problem)
-	s.clearProblemListCache(ctx, "create")
-	s.syncProblemToRAG(ctx, problem.ID)
+	cacheutil.InvalidateProblemList(ctx, "create")
+	s.enqueueProblemUpsert(ctx, problem.ID, "create")
 	return &problem, nil
 }
 
@@ -225,10 +219,8 @@ func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, re
 		return err
 	}
 
-	s.clearProblemDetailCache(ctx, problemID, "update")
-	s.clearProblemListCache(ctx, "update")
-	s.syncProblemToESByStringID(ctx, problemID)
-	s.syncProblemToRAGByStringID(ctx, problemID)
+	cacheutil.InvalidateProblem(ctx, uintID(problemID), "update")
+	s.enqueueProblemUpsert(ctx, uintID(problemID), "update")
 	return nil
 }
 
@@ -237,10 +229,8 @@ func (s *ProblemService) DeleteProblem(ctx context.Context, problemID string) er
 		return err
 	}
 
-	s.clearProblemDetailCache(ctx, problemID, "delete")
-	s.clearProblemListCache(ctx, "delete")
-	s.deleteProblemFromES(ctx, problemID)
-	s.deleteProblemFromRAG(ctx, problemID)
+	cacheutil.InvalidateProblem(ctx, uintID(problemID), "delete")
+	s.enqueueProblemDelete(ctx, uintID(problemID), "delete")
 	return nil
 }
 
@@ -249,10 +239,8 @@ func (s *ProblemService) UpdateProblemTags(ctx context.Context, problemID string
 		return err
 	}
 
-	s.clearProblemDetailCache(ctx, problemID, "update tags")
-	s.clearProblemListCache(ctx, "update tags")
-	s.syncProblemToESByStringID(ctx, problemID)
-	s.syncProblemToRAGByStringID(ctx, problemID)
+	cacheutil.InvalidateProblem(ctx, uintID(problemID), "update tags")
+	s.enqueueProblemUpsert(ctx, uintID(problemID), "update tags")
 	return nil
 }
 
@@ -303,100 +291,22 @@ func buildESProblemDoc(problem *model.Problem) model.EsProblem {
 	}
 }
 
-func (s *ProblemService) syncProblemToESDocument(ctx context.Context, problem *model.Problem) {
-	if err := s.searchRepo.UpsertProblemToES(ctx, buildESProblemDoc(problem)); err != nil {
-		log.Printf("sync problem %d to es failed: %v", problem.ID, err)
+func (s *ProblemService) enqueueProblemUpsert(ctx context.Context, problemID uint, scene string) {
+	if err := s.syncer.EnqueueProblemUpsert(ctx, problemID); err != nil {
+		log.Printf("enqueue problem %d sync after %s failed: %v", problemID, scene, err)
 	}
 }
 
-func (s *ProblemService) syncProblemToESByStringID(ctx context.Context, problemID string) {
-	problem, err := s.repo.GetProblemByID(ctx, problemID)
-	if err != nil {
-		log.Printf("load problem %s for es sync failed: %v", problemID, err)
-		return
-	}
-
-	s.syncProblemToESDocument(ctx, problem)
-}
-
-func (s *ProblemService) deleteProblemFromES(ctx context.Context, problemID string) {
-	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
-	if err != nil {
-		log.Printf("skip es delete because problem id is invalid: %q err=%v", problemID, err)
-		return
-	}
-
-	if err := s.searchRepo.DeleteProblemFromES(ctx, uint(id)); err != nil {
-		log.Printf("delete problem %d from es failed: %v", id, err)
+func (s *ProblemService) enqueueProblemDelete(ctx context.Context, problemID uint, scene string) {
+	if err := s.syncer.EnqueueProblemDelete(ctx, problemID); err != nil {
+		log.Printf("enqueue problem %d delete sync after %s failed: %v", problemID, scene, err)
 	}
 }
 
-func (s *ProblemService) syncProblemToRAGByStringID(ctx context.Context, problemID string) {
-	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
+func uintID(value string) uint {
+	id, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
-		log.Printf("skip rag sync because problem id is invalid: %q err=%v", problemID, err)
-		return
+		return 0
 	}
-
-	s.syncProblemToRAG(ctx, uint(id))
-}
-
-func (s *ProblemService) syncProblemToRAG(ctx context.Context, problemID uint) {
-	if err := s.callRAGSyncEndpoint(ctx, "/rag/problems/sync", problemID); err != nil {
-		log.Printf("sync problem %d to qdrant failed: %v", problemID, err)
-	}
-}
-
-func (s *ProblemService) deleteProblemFromRAG(ctx context.Context, problemID string) {
-	id, err := strconv.ParseUint(strings.TrimSpace(problemID), 10, 64)
-	if err != nil {
-		log.Printf("skip rag delete because problem id is invalid: %q err=%v", problemID, err)
-		return
-	}
-
-	if err := s.callRAGSyncEndpoint(ctx, "/rag/problems/delete", uint(id)); err != nil {
-		log.Printf("delete problem %d from qdrant failed: %v", id, err)
-	}
-}
-
-func (s *ProblemService) callRAGSyncEndpoint(ctx context.Context, path string, problemID uint) error {
-	agentBaseURL := strings.TrimRight(config.GlobalConfig.StudyPlan.AgentBaseURL, "/")
-	if agentBaseURL == "" {
-		agentBaseURL = "http://localhost:8000"
-	}
-
-	bodyBytes, err := json.Marshal(ragProblemSyncRequest{ProblemID: problemID})
-	if err != nil {
-		return fmt.Errorf("marshal rag sync request failed: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		agentBaseURL+path,
-		bytes.NewReader(bodyBytes),
-	)
-	if err != nil {
-		return fmt.Errorf("create rag sync request failed: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer problem-sync-service")
-
-	timeoutSeconds := config.GlobalConfig.StudyPlan.AgentTimeoutSeconds
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 60
-	}
-
-	resp, err := (&http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}).Do(req)
-	if err != nil {
-		return fmt.Errorf("do rag sync request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("rag sync returned status=%d", resp.StatusCode)
-	}
-
-	return nil
+	return uint(id)
 }

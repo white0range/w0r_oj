@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -30,6 +31,7 @@ import (
 	subHandler "gojo/internal/submission/handler"
 	subRepo "gojo/internal/submission/repository"
 	subSvc "gojo/internal/submission/service"
+	"gojo/internal/syncer"
 	userHandler "gojo/internal/user/handler"
 	userRepo "gojo/internal/user/repository"
 	userSvc "gojo/internal/user/service"
@@ -53,7 +55,10 @@ func main() {
 	pr := problemRepo.NewProblemRepository()
 	sr := problemRepo.NewProblemSearchRepository()
 	subR := subRepo.NewSubmissionRepository()
-	jr := judgeRepo.NewJudgeRepository()
+	syncManager := syncer.NewManager(pr, sr)
+	syncManager.Start(context.Background())
+
+	jr := judgeRepo.NewJudgeRepository(syncManager)
 	lr := leaderboardRepo.NewLeaderboardRepository()
 	ar := analysisRepo.NewAnalysisRepository()
 	spr := studyPlanRepo.NewStudyPlanRepository()
@@ -63,9 +68,9 @@ func main() {
 	aiProvider := ai.NewAIProvider()
 	submissionService := subSvc.NewSubmissionService(subR)
 	userService := userSvc.NewUserService(ur, usr, submissionService)
-	problemService := problemSvc.NewProblemService(pr, sr)
-	tagService := problemSvc.NewTagService(problemRepo.NewTagRepository())
-	testCaseService := problemSvc.NewTestCaseService(problemRepo.NewTestCaseRepository())
+	problemService := problemSvc.NewProblemService(pr, sr, syncManager)
+	tagService := problemSvc.NewTagService(problemRepo.NewTagRepository(), syncManager)
+	testCaseService := problemSvc.NewTestCaseService(problemRepo.NewTestCaseRepository(), syncManager)
 	leaderboardService := leaderboardSvc.NewLeaderboardService(lr, userService)
 	analysisService := analysisSvc.NewAnalysisService(ar, subR)
 	studyPlanService := studyPlanSvc.NewStudyPlanService(spr, userService, subR, pr)

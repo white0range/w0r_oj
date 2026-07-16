@@ -13,7 +13,7 @@ import (
 type TagRepository interface {
 	GetTagList(ctx context.Context, tags *[]model.Tag) error
 	CreateTag(ctx context.Context, tag *model.Tag) error
-	DeleteTag(ctx context.Context, tagId string) error
+	DeleteTag(ctx context.Context, tagID string) ([]uint, error)
 }
 
 type TagRepositoryMysql struct{}
@@ -30,8 +30,8 @@ func (r *TagRepositoryMysql) CreateTag(ctx context.Context, tag *model.Tag) erro
 	return mysql.DB.WithContext(ctx).Create(&tag).Error
 }
 
-func (r *TagRepositoryMysql) DeleteTag(ctx context.Context, tagID string) error {
-	return mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (r *TagRepositoryMysql) DeleteTag(ctx context.Context, tagID string) (problemIDs []uint, err error) {
+	err = mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tag model.Tag
 		if err := tx.First(&tag, tagID).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -40,14 +40,13 @@ func (r *TagRepositoryMysql) DeleteTag(ctx context.Context, tagID string) error 
 			return err
 		}
 
+		if err := tx.Table("problem_tags").Where("tag_id = ?", tag.ID).Pluck("problem_id", &problemIDs).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&tag).Association("Problems").Clear(); err != nil {
 			return err
 		}
-
-		if err := tx.Delete(&tag).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return tx.Delete(&tag).Error
 	})
+	return problemIDs, err
 }

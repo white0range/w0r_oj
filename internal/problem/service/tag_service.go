@@ -8,16 +8,19 @@ import (
 	"time"
 
 	"gojo/infrastructure/cache"
+	"gojo/internal/problem/cacheutil"
 	"gojo/internal/problem/model"
 	"gojo/internal/problem/repository"
+	"gojo/internal/syncer"
 )
 
 type TagService struct {
-	repo repository.TagRepository
+	repo   repository.TagRepository
+	syncer syncer.Producer
 }
 
-func NewTagService(r repository.TagRepository) *TagService {
-	return &TagService{repo: r}
+func NewTagService(r repository.TagRepository, producer syncer.Producer) *TagService {
+	return &TagService{repo: r, syncer: producer}
 }
 
 const TagCacheKey = "cache:tags:all"
@@ -64,29 +67,20 @@ func (s *TagService) CreateTag(ctx context.Context, name string) (*model.Tag, er
 }
 
 func (s *TagService) DeleteTag(ctx context.Context, tagID string) error {
-	if err := s.repo.DeleteTag(ctx, tagID); err != nil {
+	problemIDs, err := s.repo.DeleteTag(ctx, tagID)
+	if err != nil {
 		return err
 	}
 
 	if err := cache.Rdb.Del(ctx, TagCacheKey).Err(); err != nil {
 		log.Printf("clear tag cache after delete failed: %v", err)
 	}
+	cacheutil.InvalidateAllProblemCaches(ctx, "delete tag")
 
-	keys1, err1 := cache.Rdb.Keys(ctx, "cache:problems:page:*").Result()
-	keys2, err2 := cache.Rdb.Keys(ctx, "cache:problem:detail:*").Result()
-	if err1 != nil {
-		log.Printf("list problem page cache keys failed after deleting tag: %v", err1)
-	}
-	if err2 != nil {
-		log.Printf("list problem detail cache keys failed after deleting tag: %v", err2)
-	}
-
-	allKeys := append(keys1, keys2...)
-	if len(allKeys) > 0 {
-		if err := cache.Rdb.Del(ctx, allKeys...).Err(); err != nil {
-			log.Printf("clear problem caches after deleting tag failed: %v", err)
+	for _, problemID := range problemIDs {
+		if err := s.syncer.EnqueueProblemUpsert(ctx, problemID); err != nil {
+			log.Printf("enqueue problem %d sync after deleting tag failed: %v", problemID, err)
 		}
 	}
-
 	return nil
 }
