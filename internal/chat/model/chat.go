@@ -3,6 +3,11 @@ package model
 import "time"
 
 const (
+	TaskStatusPending   = "pending"
+	TaskStatusRunning   = "running"
+	TaskStatusSucceeded = "succeeded"
+	TaskStatusFailed    = "failed"
+
 	ChatSessionStatusActive   = "active"
 	ChatSessionStatusArchived = "archived"
 
@@ -58,7 +63,23 @@ type ChatTurn struct {
 	ErrorMessage string `gorm:"type:text" json:"error_message"`
 	Model        string `gorm:"size:100" json:"model"`
 
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	FinishedAt *time.Time `json:"finished_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	FinishedAt      *time.Time `json:"finished_at"`
+	ProcessingToken string     `gorm:"size:64;index" json:"-"`
+	LeaseExpiresAt  *time.Time `gorm:"index" json:"-"`
+}
+
+// ChatPlanFeedback records a user's evaluation of one completed assistant turn.
+type ChatPlanFeedback struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	ChatTurnID uint `gorm:"not null;uniqueIndex:idx_chat_plan_feedback_turn_user" json:"chat_turn_id"`
+	UserID     uint `gorm:"not null;uniqueIndex:idx_chat_plan_feedback_turn_user" json:"user_id"`
+
+	Helpful bool   `gorm:"not null" json:"helpful"`
+	Comment string `gorm:"type:text" json:"comment"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

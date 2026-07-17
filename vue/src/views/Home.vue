@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page workspace-page">
     <section class="workspace-masthead">
       <div class="workspace-copy">
@@ -11,7 +11,7 @@
         <div class="cluster workspace-actions">
           <a href="#problem-explorer" class="btn btn-primary">浏览题库</a>
           <router-link to="/leaderboard" class="btn btn-outline">查看排行榜</router-link>
-          <router-link v-if="store.isLoggedIn" to="/study-plan" class="btn btn-ghost">打开 AI 学习助手</router-link>
+          <router-link v-if="store.isLoggedIn" to="/chat" class="btn btn-ghost">打开 AI 学习助手</router-link>
           <router-link v-else to="/register" class="btn btn-secondary">创建账户</router-link>
         </div>
       </div>

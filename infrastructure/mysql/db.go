@@ -7,8 +7,8 @@ import (
 
 	"gojo/config"
 	analysisModel "gojo/internal/analysis/model"
+	chatModel "gojo/internal/chat/model"
 	problemModel "gojo/internal/problem/model"
-	studyPlanModel "gojo/internal/study_plan/model"
 	submissionModel "gojo/internal/submission/model"
 	userModel "gojo/internal/user/model"
 
@@ -46,11 +46,10 @@ func InitDB() {
 		&problemModel.Tag{},
 		&analysisModel.AnalysisTask{},
 		&analysisModel.AnalysisFeedback{},
-		&studyPlanModel.StudyPlanTask{},
-		&studyPlanModel.StudyPlanFeedback{},
-		&studyPlanModel.ChatSession{},
-		&studyPlanModel.ChatMessage{},
-		&studyPlanModel.ChatTurn{},
+		&chatModel.ChatSession{},
+		&chatModel.ChatMessage{},
+		&chatModel.ChatTurn{},
+		&chatModel.ChatPlanFeedback{},
 	)
 	if err != nil {
 		log.Fatal("auto migrate failed: ", err)

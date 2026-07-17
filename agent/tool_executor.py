@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -277,24 +277,24 @@ def _rerank_hybrid_candidates(query: str, items: list[dict], limit: int) -> list
     return ranked[:limit]
 
 
-def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionContext) -> dict:
+def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionContext, bound_user_id: int) -> dict:
     debug_enabled = _is_debug_enabled()
 
     if debug_enabled:
         print(f"[tool-exec] {name} arguments={arguments}")
 
     if name == "user_ac_history":
-        return get_user_ac_history(arguments["user_id"], token)
+        return get_user_ac_history(bound_user_id, token)
 
     if name == "user_failed_submissions":
         return get_user_failed_submissions(
-            arguments["user_id"],
+            bound_user_id,
             token,
             limit=arguments.get("limit", 10),
         )
 
     if name == "user_tag_stats":
-        return get_user_tag_stats(arguments["user_id"], token)
+        return get_user_tag_stats(bound_user_id, token)
 
     if name == "candidate_problems":
         request_key = json.dumps(

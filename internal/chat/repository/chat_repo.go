@@ -2,18 +2,25 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"gojo/infrastructure/cache"
 	"gojo/infrastructure/mysql"
-	"gojo/internal/study_plan/model"
+	"gojo/internal/chat/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-const ChatTurnQueueKey = "study_plan_turn_queue"
+type chatRepoMysql struct{}
+
+const ChatTurnQueueKey = "chat_turn_queue"
+const ChatTurnProcessingQueueKey = "chat_turn_processing"
+const ChatTurnDispatchPrefix = "chat_turn_dispatch:"
 
 const (
 	chatSummaryMaxChars      = 4000
@@ -32,17 +39,25 @@ type ChatRepository interface {
 	ApplySessionCompaction(ctx context.Context, sessionID uint, archivedMessageIDs []uint, mergedSummary string) (*model.ChatSession, error)
 	CreateUserMessageTurn(ctx context.Context, session *model.ChatSession, content string, modelName string) (*model.ChatMessage, *model.ChatTurn, error)
 	GetTurnByID(ctx context.Context, turnID uint) (*model.ChatTurn, error)
-	UpdateTurnStatus(ctx context.Context, turnID uint, status string) error
-	CompleteTurn(ctx context.Context, turnID uint, assistantContent string, rawResult string, finishedAt time.Time) (*model.ChatMessage, error)
-	UpdateTurnFailed(ctx context.Context, turnID uint, errorMessage string, finishedAt time.Time) error
+	ClaimTurn(ctx context.Context, turnID uint, processingToken string, leaseExpiresAt time.Time) (*model.ChatTurn, bool, error)
+	RenewTurnLease(ctx context.Context, turnID uint, processingToken string, leaseExpiresAt time.Time) (bool, error)
+	ListDispatchableTurnIDs(ctx context.Context, now time.Time, limit int) ([]uint, error)
+	UpsertPlanFeedback(ctx context.Context, feedback *model.ChatPlanFeedback) error
+	GetPlanFeedbackByTurnIDAndUserID(ctx context.Context, turnID uint, userID uint) (*model.ChatPlanFeedback, error)
+	CompleteClaimedTurn(ctx context.Context, turnID uint, processingToken string, assistantContent string, rawResult string, finishedAt time.Time) (*model.ChatMessage, bool, error)
+	FailClaimedTurn(ctx context.Context, turnID uint, processingToken string, errorMessage string, finishedAt time.Time) (bool, error)
 	PushTurnToQueue(ctx context.Context, taskBytes []byte) error
 }
 
-func (r *studyPlanRepoMysql) CreateSession(ctx context.Context, session *model.ChatSession) error {
+func NewChatRepository() ChatRepository {
+	return &chatRepoMysql{}
+}
+
+func (r *chatRepoMysql) CreateSession(ctx context.Context, session *model.ChatSession) error {
 	return mysql.DB.WithContext(ctx).Create(session).Error
 }
 
-func (r *studyPlanRepoMysql) ListSessionsByUserID(ctx context.Context, userID uint, limit int) ([]model.ChatSession, error) {
+func (r *chatRepoMysql) ListSessionsByUserID(ctx context.Context, userID uint, limit int) ([]model.ChatSession, error) {
 	var sessions []model.ChatSession
 	query := mysql.DB.WithContext(ctx).
 		Where("user_id = ? AND status = ?", userID, model.ChatSessionStatusActive).
@@ -54,7 +69,7 @@ func (r *studyPlanRepoMysql) ListSessionsByUserID(ctx context.Context, userID ui
 	return sessions, err
 }
 
-func (r *studyPlanRepoMysql) GetSessionByID(ctx context.Context, sessionID uint) (*model.ChatSession, error) {
+func (r *chatRepoMysql) GetSessionByID(ctx context.Context, sessionID uint) (*model.ChatSession, error) {
 	var session model.ChatSession
 	if err := mysql.DB.WithContext(ctx).First(&session, sessionID).Error; err != nil {
 		return nil, err
@@ -62,14 +77,14 @@ func (r *studyPlanRepoMysql) GetSessionByID(ctx context.Context, sessionID uint)
 	return &session, nil
 }
 
-func (r *studyPlanRepoMysql) ArchiveSession(ctx context.Context, sessionID uint) error {
+func (r *chatRepoMysql) ArchiveSession(ctx context.Context, sessionID uint) error {
 	return mysql.DB.WithContext(ctx).
 		Model(&model.ChatSession{}).
 		Where("id = ?", sessionID).
 		Update("status", model.ChatSessionStatusArchived).Error
 }
 
-func (r *studyPlanRepoMysql) HasActiveTurn(ctx context.Context, sessionID uint) (bool, error) {
+func (r *chatRepoMysql) HasActiveTurn(ctx context.Context, sessionID uint) (bool, error) {
 	var count int64
 	err := mysql.DB.WithContext(ctx).
 		Model(&model.ChatTurn{}).
@@ -81,7 +96,7 @@ func (r *studyPlanRepoMysql) HasActiveTurn(ctx context.Context, sessionID uint) 
 	return count > 0, nil
 }
 
-func (r *studyPlanRepoMysql) ListMessagesBySessionID(ctx context.Context, sessionID uint, limit int) ([]model.ChatMessage, error) {
+func (r *chatRepoMysql) ListMessagesBySessionID(ctx context.Context, sessionID uint, limit int) ([]model.ChatMessage, error) {
 	var messages []model.ChatMessage
 	query := mysql.DB.WithContext(ctx).
 		Where("session_id = ? AND archived = ?", sessionID, false).
@@ -93,7 +108,7 @@ func (r *studyPlanRepoMysql) ListMessagesBySessionID(ctx context.Context, sessio
 	return messages, err
 }
 
-func (r *studyPlanRepoMysql) ListRecentMessagesBySessionID(ctx context.Context, sessionID uint, limit int) ([]model.ChatMessage, error) {
+func (r *chatRepoMysql) ListRecentMessagesBySessionID(ctx context.Context, sessionID uint, limit int) ([]model.ChatMessage, error) {
 	if limit <= 0 {
 		return r.ListMessagesBySessionID(ctx, sessionID, 0)
 	}
@@ -113,7 +128,7 @@ func (r *studyPlanRepoMysql) ListRecentMessagesBySessionID(ctx context.Context, 
 	return recent, nil
 }
 
-func (r *studyPlanRepoMysql) PrepareSessionCompaction(ctx context.Context, sessionID uint, keepRecent int) (*model.ChatSession, []model.ChatMessage, error) {
+func (r *chatRepoMysql) PrepareSessionCompaction(ctx context.Context, sessionID uint, keepRecent int) (*model.ChatSession, []model.ChatMessage, error) {
 	if keepRecent <= 0 {
 		keepRecent = 8
 	}
@@ -140,7 +155,7 @@ func (r *studyPlanRepoMysql) PrepareSessionCompaction(ctx context.Context, sessi
 	return session, chunk, nil
 }
 
-func (r *studyPlanRepoMysql) ApplySessionCompaction(ctx context.Context, sessionID uint, archivedMessageIDs []uint, mergedSummary string) (*model.ChatSession, error) {
+func (r *chatRepoMysql) ApplySessionCompaction(ctx context.Context, sessionID uint, archivedMessageIDs []uint, mergedSummary string) (*model.ChatSession, error) {
 	var session model.ChatSession
 
 	err := mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -171,7 +186,7 @@ func (r *studyPlanRepoMysql) ApplySessionCompaction(ctx context.Context, session
 	return &session, nil
 }
 
-func (r *studyPlanRepoMysql) CreateUserMessageTurn(ctx context.Context, session *model.ChatSession, content string, modelName string) (*model.ChatMessage, *model.ChatTurn, error) {
+func (r *chatRepoMysql) CreateUserMessageTurn(ctx context.Context, session *model.ChatSession, content string, modelName string) (*model.ChatMessage, *model.ChatTurn, error) {
 	var message model.ChatMessage
 	var turn model.ChatTurn
 	now := time.Now()
@@ -222,7 +237,7 @@ func (r *studyPlanRepoMysql) CreateUserMessageTurn(ctx context.Context, session 
 	return &message, &turn, nil
 }
 
-func (r *studyPlanRepoMysql) GetTurnByID(ctx context.Context, turnID uint) (*model.ChatTurn, error) {
+func (r *chatRepoMysql) GetTurnByID(ctx context.Context, turnID uint) (*model.ChatTurn, error) {
 	var turn model.ChatTurn
 	if err := mysql.DB.WithContext(ctx).First(&turn, turnID).Error; err != nil {
 		return nil, err
@@ -230,19 +245,69 @@ func (r *studyPlanRepoMysql) GetTurnByID(ctx context.Context, turnID uint) (*mod
 	return &turn, nil
 }
 
-func (r *studyPlanRepoMysql) UpdateTurnStatus(ctx context.Context, turnID uint, status string) error {
-	return mysql.DB.WithContext(ctx).
+func (r *chatRepoMysql) ClaimTurn(ctx context.Context, turnID uint, processingToken string, leaseExpiresAt time.Time) (*model.ChatTurn, bool, error) {
+	now := time.Now()
+	result := mysql.DB.WithContext(ctx).
 		Model(&model.ChatTurn{}).
-		Where("id = ?", turnID).
-		Update("status", status).Error
+		Where("id = ? AND (status = ? OR (status = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))", turnID, model.TaskStatusPending, model.TaskStatusRunning, now).
+		Updates(map[string]interface{}{
+			"status":           model.TaskStatusRunning,
+			"processing_token": processingToken,
+			"lease_expires_at": leaseExpiresAt,
+			"error_message":    "",
+			"finished_at":      nil,
+		})
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, false, nil
+	}
+
+	var turn model.ChatTurn
+	if err := mysql.DB.WithContext(ctx).First(&turn, turnID).Error; err != nil {
+		return nil, false, err
+	}
+	return &turn, true, nil
 }
 
-func (r *studyPlanRepoMysql) CompleteTurn(ctx context.Context, turnID uint, assistantContent string, rawResult string, finishedAt time.Time) (*model.ChatMessage, error) {
+func (r *chatRepoMysql) RenewTurnLease(ctx context.Context, turnID uint, processingToken string, leaseExpiresAt time.Time) (bool, error) {
+	result := mysql.DB.WithContext(ctx).
+		Model(&model.ChatTurn{}).
+		Where("id = ? AND status = ? AND processing_token = ?", turnID, model.TaskStatusRunning, processingToken).
+		Update("lease_expires_at", leaseExpiresAt)
+	return result.RowsAffected == 1, result.Error
+}
+
+func (r *chatRepoMysql) ListDispatchableTurnIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var turns []model.ChatTurn
+	if err := mysql.DB.WithContext(ctx).
+		Select("id").
+		Where("status = ? OR (status = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?))", model.TaskStatusPending, model.TaskStatusRunning, now).
+		Order("id ASC").
+		Limit(limit).
+		Find(&turns).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]uint, 0, len(turns))
+	for _, turn := range turns {
+		ids = append(ids, turn.ID)
+	}
+	return ids, nil
+}
+
+func (r *chatRepoMysql) CompleteClaimedTurn(ctx context.Context, turnID uint, processingToken string, assistantContent string, rawResult string, finishedAt time.Time) (*model.ChatMessage, bool, error) {
 	var turn model.ChatTurn
 	var assistantMessage model.ChatMessage
 
 	err := mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&turn, turnID).Error; err != nil {
+		if err := tx.Where("id = ? AND status = ? AND processing_token = ?", turnID, model.TaskStatusRunning, processingToken).First(&turn).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
 			return err
 		}
 
@@ -257,40 +322,47 @@ func (r *studyPlanRepoMysql) CompleteTurn(ctx context.Context, turnID uint, assi
 			return err
 		}
 
-		if err := tx.Model(&model.ChatTurn{}).Where("id = ?", turn.ID).Updates(map[string]interface{}{
-			"assistant_message_id": assistantMessage.ID,
-			"status":               model.TaskStatusSucceeded,
-			"result":               rawResult,
-			"finished_at":          finishedAt,
-		}).Error; err != nil {
-			return err
+		result := tx.Model(&model.ChatTurn{}).
+			Where("id = ? AND status = ? AND processing_token = ?", turn.ID, model.TaskStatusRunning, processingToken).
+			Updates(map[string]interface{}{
+				"assistant_message_id": assistantMessage.ID,
+				"status":               model.TaskStatusSucceeded,
+				"result":               rawResult,
+				"finished_at":          finishedAt,
+				"processing_token":     "",
+				"lease_expires_at":     nil,
+			})
+		if result.Error != nil {
+			return result.Error
 		}
-
-		if err := tx.Model(&model.ChatSession{}).Where("id = ?", turn.SessionID).Update("last_message_at", finishedAt).Error; err != nil {
-			return err
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("chat turn claim was lost during completion")
 		}
-
-		return nil
+		return tx.Model(&model.ChatSession{}).Where("id = ?", turn.SessionID).Update("last_message_at", finishedAt).Error
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-
-	return &assistantMessage, nil
+	if turn.ID == 0 {
+		return nil, false, nil
+	}
+	return &assistantMessage, true, nil
 }
 
-func (r *studyPlanRepoMysql) UpdateTurnFailed(ctx context.Context, turnID uint, errorMessage string, finishedAt time.Time) error {
-	return mysql.DB.WithContext(ctx).
+func (r *chatRepoMysql) FailClaimedTurn(ctx context.Context, turnID uint, processingToken string, errorMessage string, finishedAt time.Time) (bool, error) {
+	result := mysql.DB.WithContext(ctx).
 		Model(&model.ChatTurn{}).
-		Where("id = ?", turnID).
+		Where("id = ? AND status = ? AND processing_token = ?", turnID, model.TaskStatusRunning, processingToken).
 		Updates(map[string]interface{}{
-			"status":        model.TaskStatusFailed,
-			"error_message": errorMessage,
-			"finished_at":   finishedAt,
-		}).Error
+			"status":           model.TaskStatusFailed,
+			"error_message":    errorMessage,
+			"finished_at":      finishedAt,
+			"processing_token": "",
+			"lease_expires_at": nil,
+		})
+	return result.RowsAffected == 1, result.Error
 }
-
-func (r *studyPlanRepoMysql) PushTurnToQueue(ctx context.Context, taskBytes []byte) error {
+func (r *chatRepoMysql) PushTurnToQueue(ctx context.Context, taskBytes []byte) error {
 	return cache.Rdb.LPush(ctx, ChatTurnQueueKey, taskBytes).Err()
 }
 
@@ -366,4 +438,19 @@ func truncateRunes(text string, maxChars int) string {
 		return string(runes[:maxChars])
 	}
 	return string(runes[:maxChars-3]) + "..."
+}
+
+func (r *chatRepoMysql) UpsertPlanFeedback(ctx context.Context, feedback *model.ChatPlanFeedback) error {
+	return mysql.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chat_turn_id"}, {Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"helpful", "comment", "updated_at"}),
+	}).Create(feedback).Error
+}
+
+func (r *chatRepoMysql) GetPlanFeedbackByTurnIDAndUserID(ctx context.Context, turnID uint, userID uint) (*model.ChatPlanFeedback, error) {
+	var feedback model.ChatPlanFeedback
+	if err := mysql.DB.WithContext(ctx).Where("chat_turn_id = ? AND user_id = ?", turnID, userID).First(&feedback).Error; err != nil {
+		return nil, err
+	}
+	return &feedback, nil
 }

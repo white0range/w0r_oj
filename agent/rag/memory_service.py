@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -9,17 +9,17 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from rag.index_service import ensure_collection, embed_documents, qdrant_client
 from rag.search_service import DEFAULT_QDRANT_URL, embed_query
-from schemas import StudyPlanResult
+from schemas import ChatResult
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
-DEFAULT_MEMORY_COLLECTION = os.getenv("MEMORY_COLLECTION", "study_plan_memories")
+DEFAULT_MEMORY_COLLECTION = os.getenv("MEMORY_COLLECTION", "chat_memories")
 DEFAULT_MEMORY_TOP_K = int(os.getenv("MEMORY_TOP_K", "3"))
 
 
-def _memory_text(user_id: int, query_text: str, result: StudyPlanResult) -> str:
+def _memory_text(user_id: int, query_text: str, result: ChatResult) -> str:
     recommended_titles = ", ".join(item.title for item in result.recommended_problems) or "none"
     weak_tags = ", ".join(result.weak_tags) or "none"
     return (
@@ -27,7 +27,7 @@ def _memory_text(user_id: int, query_text: str, result: StudyPlanResult) -> str:
         f"Query: {query_text or 'No explicit user query provided.'}\n"
         f"Weak Tags: {weak_tags}\n"
         f"Recommended Problems: {recommended_titles}\n"
-        f"Summary: {result.study_plan_summary}"
+        f"Summary: {result.answer}"
     )
 
 
@@ -74,7 +74,7 @@ def search_user_memories(
         normalized.append(
             {
                 "score": float(result.score),
-                "memory_kind": payload.get("memory_kind", "study_plan_chat"),
+                "memory_kind": payload.get("memory_kind", "chat"),
                 "query_text": payload.get("query_text", ""),
                 "memory_text": payload.get("memory_text", ""),
                 "created_at": payload.get("created_at", ""),
@@ -83,11 +83,11 @@ def search_user_memories(
     return normalized
 
 
-def save_study_plan_memory(
+def save_chat_memory(
     user_id: int,
     query_text: str,
-    result: StudyPlanResult,
-    memory_kind: str = "study_plan_chat",
+    result: ChatResult,
+    memory_kind: str = "chat",
     qdrant_url: str = DEFAULT_QDRANT_URL,
     collection_name: str = DEFAULT_MEMORY_COLLECTION,
 ) -> str:
@@ -103,7 +103,7 @@ def save_study_plan_memory(
         "query_text": query_text,
         "memory_kind": memory_kind,
         "memory_text": memory_text,
-        "study_plan_result": json.loads(result.model_dump_json()),
+        "chat_result": json.loads(result.model_dump_json()),
         "created_at": created_at,
     }
 

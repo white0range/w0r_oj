@@ -1,10 +1,10 @@
-﻿<template>
+<template>
   <div class="chat-shell">
     <aside class="chat-sidebar">
       <div class="sidebar-top">
         <div class="sidebar-brand">
           <span class="sidebar-kicker">AI Study Assistant</span>
-          <h1>学习计划</h1>
+          <h1>学习助手</h1>
           <p>围绕刷题、算法问题和题目检索做连续对话。</p>
         </div>
 
@@ -97,7 +97,7 @@
               <div class="message-content">
                 <template v-if="message.role === 'assistant' && message.parsed">
                   <div class="message-text assistant-summary">
-                    {{ message.parsed.study_plan_summary || message.content }}
+                    {{ message.parsed.answer || message.content }}
                   </div>
 
                   <div v-if="message.parsed.weak_tags.length" class="assistant-block">
@@ -196,17 +196,17 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  createStudyPlanSession,
-  deleteStudyPlanSession,
+  createChatSession,
+  deleteChatSession,
   getErrorMessage,
-  getStudyPlanMessages,
-  getStudyPlanTurn,
-  listStudyPlanSessions,
-  sendStudyPlanMessage,
+  getChatMessages,
+  getChatTurn,
+  listChatSessions,
+  sendChatMessage,
 } from '../api'
 import { store } from '../store'
 
-const STUDY_PLAN_SESSION_KEY = 'gojo:studyPlanSessionId'
+const CHAT_SESSION_KEY = 'gojo:chatSessionId'
 const ACTIVE_TURN_STATUSES = ['pending', 'running']
 const TERMINAL_TURN_STATUSES = ['succeeded', 'failed']
 
@@ -307,9 +307,9 @@ function formatDate(value) {
 function persistSessionId(sessionId) {
   activeSessionId.value = sessionId
   if (sessionId > 0) {
-    localStorage.setItem(STUDY_PLAN_SESSION_KEY, String(sessionId))
+    localStorage.setItem(CHAT_SESSION_KEY, String(sessionId))
   } else {
-    localStorage.removeItem(STUDY_PLAN_SESSION_KEY)
+    localStorage.removeItem(CHAT_SESSION_KEY)
   }
 
   const nextQuery = { ...route.query }
@@ -327,7 +327,7 @@ function getStoredSessionId() {
     return querySessionId
   }
 
-  const storedSessionId = Number(localStorage.getItem(STUDY_PLAN_SESSION_KEY) || 0)
+  const storedSessionId = Number(localStorage.getItem(CHAT_SESSION_KEY) || 0)
   return storedSessionId > 0 ? storedSessionId : 0
 }
 
@@ -369,7 +369,7 @@ function parseAssistantPayload(message) {
     return {
       weak_tags: Array.isArray(parsed?.weak_tags) ? parsed.weak_tags : [],
       recommended_problems: Array.isArray(parsed?.recommended_problems) ? parsed.recommended_problems : [],
-      study_plan_summary: parsed?.study_plan_summary || '',
+      answer: parsed?.answer || '',
     }
   } catch {
     return null
@@ -381,7 +381,7 @@ async function ensureActiveSession() {
     return activeSessionId.value
   }
 
-  const created = await createStudyPlanSession({ title: '' })
+  const created = await createChatSession({ title: '' })
   await loadSessions(false, created.id)
   persistSessionId(created.id)
   return created.id
@@ -391,7 +391,7 @@ async function loadSessions(showMessage = false, preferredSessionId = 0) {
   loadingSessions.value = true
 
   try {
-    const items = await listStudyPlanSessions({ limit: 50 })
+    const items = await listChatSessions({ limit: 50 })
     sessions.value = items
 
     const requestedSessionId = preferredSessionId || activeSessionId.value || getStoredSessionId()
@@ -429,7 +429,7 @@ async function syncPendingTurn() {
   }
 
   try {
-    const turn = await getStudyPlanTurn(lastTurnId)
+    const turn = await getChatTurn(lastTurnId)
     currentTurn.value = turn
     if (ACTIVE_TURN_STATUSES.includes(turn.status || '')) {
       connectTurnStream(turn.id)
@@ -455,7 +455,7 @@ async function loadMessages(sessionId = activeSessionId.value) {
   messageError.value = ''
 
   try {
-    const items = await getStudyPlanMessages(sessionId)
+    const items = await getChatMessages(sessionId)
     messages.value = items
     await syncPendingTurn()
     scrollMessagesToBottom()
@@ -500,7 +500,7 @@ function connectTurnStream(turnId) {
 
   closeTurnStream(false)
 
-  const source = new EventSource(`/api/study-plan/turns/${turnId}/stream?token=${encodeURIComponent(token)}`)
+  const source = new EventSource(`/api/chat/turns/${turnId}/stream?token=${encodeURIComponent(token)}`)
   turnStream = source
   turnStreamTurnId = turnId
   streamState.value = 'connecting'
@@ -580,7 +580,7 @@ async function handleDeleteSession() {
   try {
     const deletingSessionId = activeSessionId.value
     closeTurnStream()
-    await deleteStudyPlanSession(deletingSessionId)
+    await deleteChatSession(deletingSessionId)
     messages.value = []
     currentTurn.value = null
     draft.value = ''
@@ -605,7 +605,7 @@ async function handleCreateSession() {
   sessionMessage.value = ''
 
   try {
-    const created = await createStudyPlanSession({ title: '' })
+    const created = await createChatSession({ title: '' })
     await loadSessions(false, created.id)
     persistSessionId(created.id)
     messages.value = []
@@ -635,7 +635,7 @@ async function handleSendMessage() {
 
   try {
     const sessionId = await ensureActiveSession()
-    const createdTurn = await sendStudyPlanMessage(sessionId, { content })
+    const createdTurn = await sendChatMessage(sessionId, { content })
     draft.value = ''
     await loadSessions(false, sessionId)
     await loadMessages(sessionId)

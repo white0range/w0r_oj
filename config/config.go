@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ type Config struct {
 	AI            AIConfig            `mapstructure:"ai"`
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch"`
 	Judge         JudgeConfig         `mapstructure:"judge"`
-	StudyPlan     StudyPlanConfig     `mapstructure:"study_plan"`
+	Chat          ChatConfig          `mapstructure:"chat"`
 }
 
 type AppInfoConfig struct {
@@ -67,10 +67,11 @@ type JudgeConfig struct {
 	CompileTimeoutSeconds int `mapstructure:"compile_timeout_seconds"`
 }
 
-type StudyPlanConfig struct {
+type ChatConfig struct {
 	WorkerCount         int    `mapstructure:"worker_count"`
 	AgentBaseURL        string `mapstructure:"agent_base_url"`
 	AgentTimeoutSeconds int    `mapstructure:"agent_timeout_seconds"`
+	AgentServiceToken   string `mapstructure:"agent_service_token"`
 }
 
 var GlobalConfig Config
@@ -102,9 +103,9 @@ func InitConfig() {
 	viper.SetDefault("elasticsearch.addresses", []string{"http://localhost:9200"})
 	viper.SetDefault("judge.worker_count", 3)
 	viper.SetDefault("judge.compile_timeout_seconds", 45)
-	viper.SetDefault("study_plan.worker_count", 3)
-	viper.SetDefault("study_plan.agent_base_url", "http://localhost:8000")
-	viper.SetDefault("study_plan.agent_timeout_seconds", 60)
+	viper.SetDefault("chat.worker_count", 3)
+	viper.SetDefault("chat.agent_base_url", "http://localhost:8000")
+	viper.SetDefault("chat.agent_timeout_seconds", 60)
 	viper.SetDefault("jwt.access_ttl_minutes", 120)
 	viper.SetDefault("jwt.refresh_ttl_hours", 168)
 

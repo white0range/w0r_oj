@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 from typing import Any
 
@@ -7,8 +7,8 @@ from langchain_core.tools import StructuredTool
 from langchain_deepseek import ChatDeepSeek
 from pydantic import BaseModel, Field
 
-from rag.memory_service import save_study_plan_memory, search_user_memories
-from schemas import RecommendedProblem, StudyPlanResult
+from rag.memory_service import save_chat_memory, search_user_memories
+from schemas import ChatResult, RecommendedProblem
 from tool_executor import ToolExecutionContext, build_query_variants, execute_tool
 
 
@@ -45,31 +45,30 @@ def _build_model() -> ChatDeepSeek:
     return ChatDeepSeek(**kwargs)
 
 
-class UserIDArgs(BaseModel):
-    user_id: int = Field(description="User id")
+class EmptyArgs(BaseModel):
+    pass
 
 
 class FailedSubmissionArgs(BaseModel):
-    user_id: int = Field(description="User id")
-    limit: int = Field(default=10, ge=1, le=20, description="Maximum number of failed submissions to return")
+    limit: int = Field(default=10, ge=1, le=20, description="返回的失败提交记录最大数量")
 
 
 class RuleCandidateArgs(BaseModel):
-    tags: list[str] = Field(description="Target tags for rule-based candidate retrieval")
-    exclude_ids: list[int] = Field(description="Problem ids to exclude")
-    limit: int = Field(default=10, ge=1, le=20, description="Maximum number of candidate problems to return")
+    tags: list[str] = Field(description="用于规则候选题检索的目标标签")
+    exclude_ids: list[int] = Field(description="需要排除的题目 ID")
+    limit: int = Field(default=10, ge=1, le=20, description="返回的候选题目最大数量")
 
 
 class SemanticCandidateArgs(BaseModel):
-    query: str = Field(description="Natural language retrieval query")
-    exclude_ids: list[int] = Field(description="Problem ids to exclude")
-    limit: int = Field(default=10, ge=1, le=20, description="Maximum number of semantic candidate problems to return")
+    query: str = Field(description="自然语言检索查询")
+    exclude_ids: list[int] = Field(description="需要排除的题目 ID")
+    limit: int = Field(default=10, ge=1, le=20, description="返回的语义候选题目最大数量")
 
 
 class HybridCandidateArgs(BaseModel):
-    query: str = Field(description="Natural language retrieval query that should be normalized and searched with hybrid recall")
-    exclude_ids: list[int] = Field(description="Problem ids to exclude")
-    limit: int = Field(default=10, ge=1, le=20, description="Maximum number of candidate problems to return")
+    query: str = Field(description="应进行标准化并使用混合召回检索的自然语言查询")
+    exclude_ids: list[int] = Field(description="需要排除的题目 ID")
+    limit: int = Field(default=10, ge=1, le=20, description="返回的候选题目最大数量")
 
 
 def _message_content_to_text(content: Any) -> str:
@@ -114,10 +113,10 @@ def _normalize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, s
 
 def _role_label(role: str) -> str:
     if role == "assistant":
-        return "Assistant"
+        return "助手"
     if role == "system":
-        return "System"
-    return "User"
+        return "系统"
+    return "用户"
 
 
 def _messages_to_transcript(messages: list[dict[str, Any]]) -> str:
@@ -134,7 +133,7 @@ def _memory_context_text(memories: list[dict[str, Any]]) -> str:
     if not memories:
         return ""
 
-    lines = ["Relevant long-term memories for this user:"]
+    lines = ["该用户的相关长期记忆："]
     for index, memory in enumerate(memories, start=1):
         lines.append(
             f"{index}. score={memory.get('score', 0):.4f}, "
@@ -160,13 +159,13 @@ def _load_memory_context(user_id: int, query_text: str, debug_enabled: bool) -> 
     return _memory_context_text(memories)
 
 
-def _save_memory(user_id: int, query_text: str, result: StudyPlanResult, debug_enabled: bool) -> None:
+def _save_memory(user_id: int, query_text: str, result: ChatResult, debug_enabled: bool) -> None:
     try:
-        point_id = save_study_plan_memory(
+        point_id = save_chat_memory(
             user_id=user_id,
             query_text=query_text,
             result=result,
-            memory_kind="study_plan_chat",
+            memory_kind="chat",
         )
     except Exception as e:
         if debug_enabled:
@@ -177,21 +176,21 @@ def _save_memory(user_id: int, query_text: str, result: StudyPlanResult, debug_e
         print(f"[agent] memory saved point_id={point_id}")
 
 
-def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTool]:
-    def user_ac_history(user_id: int) -> dict:
-        """Get the user's solved history, including solved count and solved problem ids."""
-        return execute_tool("user_ac_history", {"user_id": user_id}, token, context)
+def _build_tools(token: str, context: ToolExecutionContext, bound_user_id: int) -> list[StructuredTool]:
+    def user_ac_history() -> dict:
+        """获取用户的已解决历史，包括解题数量和已解决题目 ID。"""
+        return execute_tool("user_ac_history", {}, token, context, bound_user_id)
 
-    def user_failed_submissions(user_id: int, limit: int = 10) -> dict:
-        """Get the user's recent failed submissions."""
-        return execute_tool("user_failed_submissions", {"user_id": user_id, "limit": limit}, token, context)
+    def user_failed_submissions(limit: int = 10) -> dict:
+        """获取用户最近的失败提交记录。"""
+        return execute_tool("user_failed_submissions", {"limit": limit}, token, context, bound_user_id)
 
-    def user_tag_stats(user_id: int) -> dict:
-        """Get the user's training statistics grouped by tag."""
-        return execute_tool("user_tag_stats", {"user_id": user_id}, token, context)
+    def user_tag_stats() -> dict:
+        """获取按标签聚合的用户训练统计。"""
+        return execute_tool("user_tag_stats", {}, token, context, bound_user_id)
 
     def candidate_problems(tags: list[str], exclude_ids: list[int], limit: int = 10) -> dict:
-        """Get candidate problems by explicit tags and exclude solved problem ids."""
+        """根据明确标签获取候选题目，并排除已解决题目 ID。"""
         return execute_tool(
             "candidate_problems",
             {
@@ -201,10 +200,11 @@ def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTo
             },
             token,
             context,
+            bound_user_id,
         )
 
     def semantic_candidate_problems(query: str, exclude_ids: list[int], limit: int = 10) -> dict:
-        """Retrieve semantically related candidate problems from the vector index using a natural language query."""
+        """使用自然语言查询从向量索引检索语义相关的候选题目。"""
         return execute_tool(
             "semantic_candidate_problems",
             {
@@ -214,10 +214,11 @@ def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTo
             },
             token,
             context,
+            bound_user_id,
         )
 
     def hybrid_candidate_problems(query: str, exclude_ids: list[int], limit: int = 10) -> dict:
-        """Normalize the query and retrieve candidate problems with lexical plus semantic hybrid recall."""
+        """标准化查询，并通过关键词加语义的混合召回检索候选题目。"""
         return execute_tool(
             "hybrid_candidate_problems",
             {
@@ -227,12 +228,13 @@ def _build_tools(token: str, context: ToolExecutionContext) -> list[StructuredTo
             },
             token,
             context,
+            bound_user_id,
         )
 
     return [
-        StructuredTool.from_function(func=user_ac_history, args_schema=UserIDArgs),
+        StructuredTool.from_function(func=user_ac_history, args_schema=EmptyArgs),
         StructuredTool.from_function(func=user_failed_submissions, args_schema=FailedSubmissionArgs),
-        StructuredTool.from_function(func=user_tag_stats, args_schema=UserIDArgs),
+        StructuredTool.from_function(func=user_tag_stats, args_schema=EmptyArgs),
         StructuredTool.from_function(func=candidate_problems, args_schema=RuleCandidateArgs),
         StructuredTool.from_function(func=semantic_candidate_problems, args_schema=SemanticCandidateArgs),
         StructuredTool.from_function(func=hybrid_candidate_problems, args_schema=HybridCandidateArgs),
@@ -247,54 +249,46 @@ def _extract_result_text(result: dict[str, Any]) -> str:
     return _message_content_to_text(content)
 
 
-def _parse_plain_text_result(text: str) -> StudyPlanResult:
-    text = text.strip()
-    if not text:
-        raise ValueError("empty final response")
-
-    weak_match = re.search(r"WEAK_TAGS:\s*(.*?)(?:\nRECOMMENDED_PROBLEMS:|\Z)", text, flags=re.S)
-    recommended_match = re.search(r"RECOMMENDED_PROBLEMS:\s*(.*?)(?:\nSUMMARY:|\Z)", text, flags=re.S)
-    summary_match = re.search(r"SUMMARY:\s*(.*)\Z", text, flags=re.S)
-
-    weak_tags: list[str] = []
-    if weak_match:
-        raw = weak_match.group(1).strip()
-        if raw and raw.upper() != "NONE":
-            weak_tags = [item.strip() for item in raw.split(",") if item.strip()]
-
-    recommended_problems: list[RecommendedProblem] = []
-    if recommended_match:
-        block = recommended_match.group(1).strip()
-        for line in block.splitlines():
-            line = line.strip()
-            if not line.startswith("-"):
-                continue
-            payload = line.removeprefix("-").strip()
-            parts = [part.strip() for part in payload.split(";") if part.strip()]
-            item: dict[str, str] = {}
-            for part in parts:
-                if "=" not in part:
-                    continue
-                key, value = part.split("=", 1)
-                item[key.strip()] = value.strip()
-            if {"problem_id", "title", "reason"} <= item.keys():
-                recommended_problems.append(
-                    RecommendedProblem(
-                        problem_id=int(item["problem_id"]),
-                        title=item["title"],
-                        reason=item["reason"],
-                    )
-                )
-
-    summary = summary_match.group(1).strip() if summary_match else text
-
-    return StudyPlanResult(
-        weak_tags=weak_tags,
-        recommended_problems=recommended_problems,
-        study_plan_summary=summary,
+def _parse_plain_text_result(text: str) -> ChatResult:
+    """Parse the agent's constrained text response without making sections mandatory."""
+    answer_match = re.search(
+        r"^ANSWER:\s*(.*?)(?=^WEAK_TAGS:|\Z)", text, flags=re.MULTILINE | re.DOTALL
+    )
+    weak_match = re.search(
+        r"^WEAK_TAGS:\s*(.*?)(?=^RECOMMENDED_PROBLEMS:|\Z)",
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    recommended_match = re.search(
+        r"^RECOMMENDED_PROBLEMS:\s*(.*)\Z", text, flags=re.MULTILINE | re.DOTALL
     )
 
+    answer = (answer_match.group(1).strip() if answer_match else text.strip())
+    weak_tags = [
+        tag.strip(" -\t")
+        for tag in (weak_match.group(1) if weak_match else "").replace("\n", ",").split(",")
+        if tag.strip(" -\t")
+    ]
 
+    recommended_problems: list[RecommendedProblem] = []
+    for line in (recommended_match.group(1) if recommended_match else "").splitlines():
+        parts = [part.strip() for part in line.lstrip("- ").split("|")]
+        if len(parts) != 3:
+            continue
+        try:
+            problem_id = int(parts[0])
+        except ValueError:
+            continue
+        recommended_problems.append(
+            RecommendedProblem(problem_id=problem_id, title=parts[1], reason=parts[2])
+        )
+
+    return ChatResult(
+        answer=answer or "暂时无法生成回答，请稍后重试。",
+        weak_tags=weak_tags,
+        recommended_problems=recommended_problems,
+        response_type="practice_plan" if recommended_problems else "qa",
+    )
 def _latest_user_query(goal: str, messages: list[dict[str, Any]]) -> str:
     for message in reversed(messages):
         if str(message.get("role", "")).strip().lower() == "user":
@@ -318,8 +312,8 @@ def _build_runtime_messages(
             {
                 "role": "user",
                 "content": (
-                    f"Continue the OJ learning conversation for user_id={user_id}. "
-                    "Answer the latest user message directly, and only recommend problems when it is useful."
+                    f"继续 user_id={user_id} 的 OJ 学习对话。"
+                    "直接回答最新的用户消息，仅在确有帮助时推荐题目。"
                 ),
             }
         )
@@ -327,7 +321,7 @@ def _build_runtime_messages(
             runtime_messages.append(
                 {
                     "role": "user",
-                    "content": f"Short-term session summary:\n{session_summary.strip()}",
+                    "content": f"短期会话摘要：\n{session_summary.strip()}",
                 }
             )
         if memory_context:
@@ -338,7 +332,7 @@ def _build_runtime_messages(
     runtime_messages.append(
         {
             "role": "user",
-            "content": f"Generate a study plan for user_id={user_id}. User goal: {goal or 'No explicit goal provided.'}",
+            "content": f"继续 user_id={user_id} 的 OJ 学习对话。用户目标：{goal or '未提供明确目标。'}",
         }
     )
     if memory_context:
@@ -346,20 +340,20 @@ def _build_runtime_messages(
     return runtime_messages
 
 
-def summarize_study_plan_session(existing_summary: str = "", messages: list[dict[str, Any]] | None = None) -> str:
+def summarize_chat_session(existing_summary: str = "", messages: list[dict[str, Any]] | None = None) -> str:
     normalized_messages = _normalize_chat_messages(messages or [])
     transcript = _messages_to_transcript(normalized_messages)
     if not transcript:
         return _truncate_text(existing_summary.strip())
 
     prompt = (
-        "You compress older OJ tutoring conversation turns into short-term memory. "
-        "Merge the existing summary and the newly archived messages into one concise plain-text summary. "
-        "Keep only durable facts that will help future turns: user goals, weak topics, constraints, solved issues, preferences, and any concrete recommended directions. "
-        "Do not mention timestamps, pleasantries, or that this is a summary. "
-        "Output plain text only.\n\n"
-        f"Existing summary:\n{existing_summary.strip() or 'none'}\n\n"
-        f"New archived messages:\n{transcript}\n"
+        "请将较早的 OJ 辅导对话压缩为短期记忆。"
+        "合并已有摘要和新归档消息，生成一段简洁的纯文本摘要。"
+        "只保留对后续对话有长期帮助的信息：用户目标、薄弱主题、约束条件、已解决问题、偏好和明确的推荐方向。"
+        "不要提及时间戳、客套话，也不要说明这是一份摘要。"
+        "只输出纯文本。\n\n"
+        f"已有摘要：\n{existing_summary.strip() or '无'}\n\n"
+        f"新归档消息：\n{transcript}\n"
     )
 
     response = _build_model().invoke(prompt)
@@ -373,13 +367,13 @@ def summarize_study_plan_session(existing_summary: str = "", messages: list[dict
     return _truncate_text(fallback)
 
 
-def run_study_plan_with_langchain(
+def run_chat_with_langchain(
     user_id: int,
     goal: str,
     token: str,
     session_summary: str = "",
     messages: list[dict[str, Any]] | None = None,
-) -> StudyPlanResult:
+) -> ChatResult:
     debug_enabled = _is_debug_enabled()
     normalized_messages = messages or []
     latest_user_query = _latest_user_query(goal, normalized_messages) or "general oj study chat"
@@ -388,26 +382,25 @@ def run_study_plan_with_langchain(
 
     agent = create_agent(
         model=_build_model(),
-        tools=_build_tools(token, context),
+        tools=_build_tools(token, context, user_id),
         system_prompt=(
-            "You are an OJ chat assistant. "
-            "Support both direct algorithm/OJ Q&A and personalized training recommendations. "
-            "If the latest user message is a basic question, answer it clearly and keep recommendations empty unless they truly help. "
-            "If the latest user message asks for practice suggestions or a study plan, personalize the reply with tools. "
-            "Available tools include user history tools, a rule-based candidate retrieval tool, a semantic retrieval tool, and a hybrid lexical+semantic retrieval tool. "
-            "Prefer hybrid_candidate_problems for natural-language retrieval, candidate_problems when tags are explicit, and semantic_candidate_problems only when hybrid retrieval is still insufficient. "
-            "Use session summary and long-term memory only as auxiliary context, and prioritize the latest user request. "
-            "Helpful normalized query variants may include: "
-            f"{', '.join(build_query_variants(latest_user_query))}. "
-            "When you finish, do not call any special finish tool. "
-            "Instead, respond in this exact plain-text format:\n"
-            "WEAK_TAGS: tag1, tag2\n"
+            "你是一名 OJ 对话助手。"
+            "你既要回答直接的算法或 OJ 问题，也要提供个性化训练建议。"
+            "如果最新用户消息是基础问题，请清晰直接地回答；除非推荐确实有帮助，否则保持推荐部分为空。"
+            "如果最新用户消息要求练习建议或学习计划，请使用工具生成个性化回复。"
+            "可用工具包括用户历史工具、基于规则的候选题检索工具、语义检索工具，以及关键词加语义的混合检索工具。"
+            "自然语言检索优先使用 hybrid_candidate_problems；标签明确时使用 candidate_problems；只有混合检索仍不足时才使用 semantic_candidate_problems。"
+            "会话摘要和长期记忆只能作为辅助上下文，应优先满足最新用户请求。"
+            "可参考的标准化查询变体包括："
+            f"{', '.join(build_query_variants(latest_user_query))}。"
+            "完成后不要调用任何特殊的结束工具。"
+            "请严格使用以下纯文本格式回复：\n"
+            "ANSWER:\n"
+            "直接回答用户的问题。\n"
+            "WEAK_TAGS: 标签1, 标签2\n"
             "RECOMMENDED_PROBLEMS:\n"
-            "- problem_id=1; title=Title A; reason=Why it is recommended\n"
-            "- problem_id=2; title=Title B; reason=Why it is recommended\n"
-            "SUMMARY:\n"
-            "One concise paragraph summary.\n"
-            "If there are no recommended problems, keep the RECOMMENDED_PROBLEMS section empty."
+            "- 题目 ID | 题目标题 | 推荐原因\n"
+            "如果没有推荐题目，请保持 RECOMMENDED_PROBLEMS 区域为空。"
         ),
     )
 

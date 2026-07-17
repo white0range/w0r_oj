@@ -6,7 +6,7 @@
         <div class="page-title">
           <div>
             <h1>{{ profile?.username || store.username || 'User' }}</h1>
-            <p class="page-subtitle">这里集中展示账号画像、已通过题目、AI 训练入口，以及管理员的后台工作台入口。</p>
+            <p class="page-subtitle">杩欓噷闆嗕腑灞曠ず璐﹀彿鐢诲儚銆佸凡閫氳繃棰樼洰銆丄I 璁粌鍏ュ彛锛屼互鍙婄鐞嗗憳鐨勫悗鍙板伐浣滃彴鍏ュ彛銆?/p>
           </div>
         </div>
       </div>
@@ -14,13 +14,13 @@
       <div class="profile-badge-panel">
         <span class="profile-avatar">{{ (profile?.username || store.username || 'G').slice(0, 1).toUpperCase() }}</span>
         <span class="badge" :class="store.isAdmin ? 'badge-admin' : 'badge-success'">
-          {{ store.isAdmin ? '管理员' : '普通用户' }}
+          {{ store.isAdmin ? '绠＄悊鍛? : '鏅€氱敤鎴? }}
         </span>
       </div>
     </section>
 
     <section v-if="loading" class="loading-state">
-      <strong>个人数据加载中</strong>
+      <strong>涓汉鏁版嵁鍔犺浇涓?/strong>
       <span class="spinner spinner-dark"></span>
     </section>
 
@@ -28,38 +28,38 @@
       <section class="metric-grid">
         <article class="metric-card">
           <span class="metric-value">{{ profile.solvedCount }}</span>
-          <span class="metric-label">已解决题目</span>
+          <span class="metric-label">宸茶В鍐抽鐩?/span>
         </article>
         <article class="metric-card">
           <span class="metric-value">{{ profile.solvedList.length }}</span>
-          <span class="metric-label">AC 记录数</span>
+          <span class="metric-label">AC 璁板綍鏁?/span>
         </article>
         <article class="metric-card">
           <span class="metric-value">{{ profile.role === 1 ? 'Admin' : 'User' }}</span>
-          <span class="metric-label">当前角色</span>
+          <span class="metric-label">褰撳墠瑙掕壊</span>
         </article>
       </section>
 
       <section class="profile-grid">
         <article class="card stack">
           <div class="section-title">
-            <h2>快捷入口</h2>
+            <h2>蹇嵎鍏ュ彛</h2>
           </div>
           <div class="quick-links">
-            <router-link to="/study-plan" class="quick-link feature-link">
-              <strong>AI 训练计划</strong>
-              <span>基于历史提交和标签画像生成推荐题单</span>
+            <router-link to="/chat" class="quick-link feature-link">
+              <strong>AI 璁粌璁″垝</strong>
+              <span>鍩轰簬鍘嗗彶鎻愪氦鍜屾爣绛剧敾鍍忕敓鎴愭帹鑽愰鍗?/span>
             </router-link>
-            <router-link to="/my-submissions" class="quick-link">查看提交记录</router-link>
-            <router-link to="/leaderboard" class="quick-link">进入排行榜</router-link>
-            <router-link to="/" class="quick-link">返回题库</router-link>
+            <router-link to="/my-submissions" class="quick-link">鏌ョ湅鎻愪氦璁板綍</router-link>
+            <router-link to="/leaderboard" class="quick-link">杩涘叆鎺掕姒?/router-link>
+            <router-link to="/" class="quick-link">杩斿洖棰樺簱</router-link>
           </div>
-          <button class="btn btn-ghost" @click="logout">退出登录</button>
+          <button class="btn btn-ghost" @click="logout">閫€鍑虹櫥褰?/button>
         </article>
 
         <article class="card stack">
           <div class="section-title">
-            <h2>已通过题目</h2>
+            <h2>宸查€氳繃棰樼洰</h2>
             <span class="muted">{{ profile.solvedList.length }} items</span>
           </div>
           <div v-if="profile.solvedList.length" class="cluster">
@@ -73,8 +73,8 @@
             </router-link>
           </div>
           <div v-else class="empty-state compact-state">
-            <strong>还没有 AC 记录</strong>
-            <span class="muted">先完成几道题，再回来用 AI 训练计划做更有针对性的推荐。</span>
+            <strong>杩樻病鏈?AC 璁板綍</strong>
+            <span class="muted">鍏堝畬鎴愬嚑閬撻锛屽啀鍥炴潵鐢?AI 璁粌璁″垝鍋氭洿鏈夐拡瀵规€х殑鎺ㄨ崘銆?/span>
           </div>
         </article>
       </section>
@@ -82,32 +82,32 @@
       <section class="ai-panel">
         <div>
           <span class="eyebrow">Agent Workflow</span>
-          <h2>推荐系统已经接到前台了。</h2>
-          <p>现在你可以从前端直接触发 `study_plan` 异步任务，查看弱项标签、推荐题单与总结建议，而不是只在 README 里展示这条能力。</p>
+          <h2>鎺ㄨ崘绯荤粺宸茬粡鎺ュ埌鍓嶅彴浜嗐€?/h2>
+          <p>鐜板湪浣犲彲浠ヤ粠鍓嶇鐩存帴瑙﹀彂 `study_plan` 寮傛浠诲姟锛屾煡鐪嬪急椤规爣绛俱€佹帹鑽愰鍗曚笌鎬荤粨寤鸿锛岃€屼笉鏄彧鍦?README 閲屽睍绀鸿繖鏉¤兘鍔涖€?/p>
         </div>
         <div class="cluster">
-          <router-link to="/study-plan" class="btn btn-secondary">打开 AI 训练计划</router-link>
+          <router-link to="/chat" class="btn btn-secondary">鎵撳紑 AI 璁粌璁″垝</router-link>
         </div>
       </section>
 
       <section v-if="store.isAdmin" class="admin-panel">
         <div>
           <span class="eyebrow">Admin Console</span>
-          <h2>管理工作区</h2>
-          <p>管理员可以直接在这里进入用户封禁管理、题目管理、标签管理和新建题目入口，用于展示后台运营能力。</p>
+          <h2>绠＄悊宸ヤ綔鍖?/h2>
+          <p>绠＄悊鍛樺彲浠ョ洿鎺ュ湪杩欓噷杩涘叆鐢ㄦ埛灏佺绠＄悊銆侀鐩鐞嗐€佹爣绛剧鐞嗗拰鏂板缓棰樼洰鍏ュ彛锛岀敤浜庡睍绀哄悗鍙拌繍钀ヨ兘鍔涖€?/p>
         </div>
         <div class="cluster">
-          <router-link to="/admin/users" class="btn btn-ghost">用户管理</router-link>
-          <router-link to="/admin/problems" class="btn btn-outline">题目管理</router-link>
-          <router-link to="/admin/problems/new" class="btn btn-primary">新建题目</router-link>
-          <router-link to="/admin/tags" class="btn btn-secondary">标签管理</router-link>
+          <router-link to="/admin/users" class="btn btn-ghost">鐢ㄦ埛绠＄悊</router-link>
+          <router-link to="/admin/problems" class="btn btn-outline">棰樼洰绠＄悊</router-link>
+          <router-link to="/admin/problems/new" class="btn btn-primary">鏂板缓棰樼洰</router-link>
+          <router-link to="/admin/tags" class="btn btn-secondary">鏍囩绠＄悊</router-link>
         </div>
       </section>
     </template>
 
     <section v-else class="empty-state">
-      <strong>没有拿到个人信息</strong>
-      <span class="muted">可以重新登录后再试一次。</span>
+      <strong>娌℃湁鎷垮埌涓汉淇℃伅</strong>
+      <span class="muted">鍙互閲嶆柊鐧诲綍鍚庡啀璇曚竴娆°€?/span>
     </section>
   </div>
 </template>

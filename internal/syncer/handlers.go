@@ -64,7 +64,7 @@ func (h *ragHandler) Handle(ctx context.Context, task Task) error {
 		return err
 	}
 
-	baseURL := strings.TrimRight(config.GlobalConfig.StudyPlan.AgentBaseURL, "/")
+	baseURL := strings.TrimRight(config.GlobalConfig.Chat.AgentBaseURL, "/")
 	if baseURL == "" {
 		baseURL = "http://localhost:8000"
 	}
@@ -73,9 +73,9 @@ func (h *ragHandler) Handle(ctx context.Context, task Task) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer problem-sync-service")
+	req.Header.Set("X-Agent-Service-Token", config.GlobalConfig.Chat.AgentServiceToken)
 
-	timeout := config.GlobalConfig.StudyPlan.AgentTimeoutSeconds
+	timeout := config.GlobalConfig.Chat.AgentTimeoutSeconds
 	if timeout <= 0 {
 		timeout = 60
 	}

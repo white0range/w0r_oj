@@ -1,4 +1,4 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 import {
   normalizeLeaderboardItem,
   normalizeProblem,
@@ -203,67 +203,50 @@ export async function getLeaderboard() {
   }
 }
 
-export async function listStudyPlanSessions(params = {}) {
-  const body = getBody(await api.get('/study-plan/sessions', { params }))
+export async function listChatSessions(params = {}) {
+  const body = getBody(await api.get('/chat/sessions', { params }))
   const data = unwrapData(body)
   return data.items || []
 }
 
-export async function createStudyPlanSession(payload = {}) {
-  const body = getBody(await api.post('/study-plan/sessions', payload))
+export async function createChatSession(payload = {}) {
+  const body = getBody(await api.post('/chat/sessions', payload))
   return unwrapData(body)
 }
 
-export async function deleteStudyPlanSession(id) {
-  const body = getBody(await api.delete(`/study-plan/sessions/${id}`))
+export async function deleteChatSession(id) {
+  const body = getBody(await api.delete(`/chat/sessions/${id}`))
   return unwrapData(body)
 }
 
-export async function getStudyPlanSession(id) {
-  const body = getBody(await api.get(`/study-plan/sessions/${id}`))
+export async function getChatSession(id) {
+  const body = getBody(await api.get(`/chat/sessions/${id}`))
   return unwrapData(body)
 }
 
-export async function getStudyPlanMessages(sessionId, params = {}) {
-  const body = getBody(await api.get(`/study-plan/sessions/${sessionId}/messages`, { params }))
+export async function getChatMessages(sessionId, params = {}) {
+  const body = getBody(await api.get(`/chat/sessions/${sessionId}/messages`, { params }))
   const data = unwrapData(body)
   return data.items || []
 }
 
-export async function sendStudyPlanMessage(sessionId, payload) {
-  const body = getBody(await api.post(`/study-plan/sessions/${sessionId}/messages`, payload))
+export async function sendChatMessage(sessionId, payload) {
+  const body = getBody(await api.post(`/chat/sessions/${sessionId}/messages`, payload))
   return unwrapData(body)
 }
 
-export async function getStudyPlanTurn(id) {
-  const body = getBody(await api.get(`/study-plan/turns/${id}`))
+export async function getChatTurn(id) {
+  const body = getBody(await api.get(`/chat/turns/${id}`))
   return unwrapData(body)
 }
 
-export async function createStudyPlanTask(payload) {
-  const body = getBody(await api.post('/study-plan/tasks', payload))
-  const data = unwrapData(body)
-
-  return {
-    taskId: Number(data.task_id || 0),
-    status: data.status || 'pending',
-    goal: data.goal || '',
-    message: body.message || 'Study plan task created',
-  }
-}
-
-export async function getStudyPlanTask(id) {
-  const body = getBody(await api.get(`/study-plan/tasks/${id}`))
+export async function submitChatPlanFeedback(turnId, payload) {
+  const body = getBody(await api.post(`/chat/turns/${turnId}/feedback`, payload))
   return unwrapData(body)
 }
 
-export async function submitStudyPlanFeedback(id, payload) {
-  const body = getBody(await api.post(`/study-plan/tasks/${id}/feedback`, payload))
-  return unwrapData(body)
-}
-
-export async function getStudyPlanFeedback(id) {
-  const body = getBody(await api.get(`/study-plan/tasks/${id}/feedback`))
+export async function getChatPlanFeedback(turnId) {
+  const body = getBody(await api.get(`/chat/turns/${turnId}/feedback`))
   return unwrapData(body)
 }
 

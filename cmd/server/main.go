@@ -14,6 +14,10 @@ import (
 	analysisSvc "gojo/internal/analysis/service"
 	analysisWorker "gojo/internal/analysis/worker"
 	"gojo/internal/app"
+	chatHandler "gojo/internal/chat/handler"
+	chatRepo "gojo/internal/chat/repository"
+	chatSvc "gojo/internal/chat/service"
+	chatWorker "gojo/internal/chat/worker"
 	"gojo/internal/judge/docker"
 	judgeRepo "gojo/internal/judge/repository"
 	judgeSvc "gojo/internal/judge/service"
@@ -24,10 +28,6 @@ import (
 	problemHandler "gojo/internal/problem/handler"
 	problemRepo "gojo/internal/problem/repository"
 	problemSvc "gojo/internal/problem/service"
-	studyPlanHandler "gojo/internal/study_plan/handler"
-	studyPlanRepo "gojo/internal/study_plan/repository"
-	studyPlanSvc "gojo/internal/study_plan/service"
-	studyPlanWorker "gojo/internal/study_plan/worker"
 	subHandler "gojo/internal/submission/handler"
 	subRepo "gojo/internal/submission/repository"
 	subSvc "gojo/internal/submission/service"
@@ -61,7 +61,7 @@ func main() {
 	jr := judgeRepo.NewJudgeRepository(syncManager)
 	lr := leaderboardRepo.NewLeaderboardRepository()
 	ar := analysisRepo.NewAnalysisRepository()
-	spr := studyPlanRepo.NewStudyPlanRepository()
+	cr := chatRepo.NewChatRepository()
 
 	judgeService := judgeSvc.NewJudgeService(jr)
 
@@ -73,20 +73,18 @@ func main() {
 	testCaseService := problemSvc.NewTestCaseService(problemRepo.NewTestCaseRepository(), syncManager)
 	leaderboardService := leaderboardSvc.NewLeaderboardService(lr, userService)
 	analysisService := analysisSvc.NewAnalysisService(ar, subR)
-	studyPlanService := studyPlanSvc.NewStudyPlanService(spr, userService, subR, pr)
+	chatService := chatSvc.NewChatService(cr, userService, subR, pr)
 
 	jw := judgeWorker.NewJudgeWorker(judgeService)
 	jw.StartWorkerPool(config.GlobalConfig.Judge.WorkerCount)
 
 	aw := analysisWorker.NewAnalysisWorker(ar, subR, pr, aiProvider)
 	aw.StartWorkerPool(3)
-
-	spw, err := studyPlanWorker.NewStudyPlanWorker(spr)
+	cw, err := chatWorker.NewChatWorker(cr)
 	if err != nil {
-		log.Fatalf("study plan worker init failed: %v", err)
+		log.Fatalf("chat worker init failed: %v", err)
 	}
-	spw.StartWorkerPool(config.GlobalConfig.StudyPlan.WorkerCount)
-	spw.StartTurnWorkerPool(config.GlobalConfig.StudyPlan.WorkerCount)
+	cw.StartTurnWorkerPool(config.GlobalConfig.Chat.WorkerCount)
 
 	uHandler := userHandler.NewUserHandler(userService)
 	pHandler := problemHandler.NewProblemHandler(problemService)
@@ -96,7 +94,7 @@ func main() {
 	tcHandler := problemHandler.NewTestCaseHandler(testCaseService)
 	searchHandler := problemHandler.NewSearchHandler(problemService)
 	aHandler := analysisHandler.NewAnalysisHandler(analysisService)
-	spHandler := studyPlanHandler.NewStudyPlanHandler(studyPlanService)
+	cHandler := chatHandler.NewChatHandler(chatService)
 
 	r := app.SetupRouter(
 		uHandler,
@@ -107,7 +105,7 @@ func main() {
 		tcHandler,
 		searchHandler,
 		aHandler,
-		spHandler,
+		cHandler,
 	)
 
 	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)

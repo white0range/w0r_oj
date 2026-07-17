@@ -12,11 +12,12 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-pro}
       GO_BACKEND_BASE_URL: ${GO_BACKEND_BASE_URL:-http://host.docker.internal:8080}
       AGENT_DEBUG: ${AGENT_DEBUG:-false}
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      MEMORY_COLLECTION: ${MEMORY_COLLECTION:-study_plan_memories}
+      MEMORY_COLLECTION: ${MEMORY_COLLECTION:-chat_memories}
       MEMORY_TOP_K: ${MEMORY_TOP_K:-3}
     volumes:
       - ./agent:/app

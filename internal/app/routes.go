@@ -7,9 +7,9 @@ import (
 
 	analysisHandler "gojo/internal/analysis/handler"
 	middlewares2 "gojo/internal/app/middlewares"
+	chatHandler "gojo/internal/chat/handler"
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	problemHandler "gojo/internal/problem/handler"
-	studyPlanHandler "gojo/internal/study_plan/handler"
 	subHandler "gojo/internal/submission/handler"
 	userHandler "gojo/internal/user/handler"
 )
@@ -23,7 +23,7 @@ func SetupRouter(
 	tcHandler *problemHandler.TestCaseHandler,
 	searchHandler *problemHandler.SearchHandler,
 	analysisHandler *analysisHandler.AnalysisHandler,
-	spHandler *studyPlanHandler.StudyPlanHandler,
+	chatHandler *chatHandler.ChatHandler,
 ) *gin.Engine {
 	r := gin.Default()
 
@@ -66,13 +66,12 @@ func SetupRouter(
 			adminGroup.DELETE("/tags/:id", tHandler.DeleteTag)
 			adminGroup.PUT("/problems/:id/tags", pHandler.UpdateProblemTags)
 			adminGroup.GET("/analysis/stats", analysisHandler.GetAdminStats)
-			adminGroup.GET("/study-plan/stats", spHandler.GetAdminStats)
 
-			adminGroup.GET("/agent/users/:id/ac-history", spHandler.GetUserACHistory)
-			adminGroup.GET("/agent/users/:id/failed-submissions", spHandler.GetUserFailedSubmissions)
-			adminGroup.GET("/agent/users/:id/tag-stats", spHandler.GetUserTagStats)
-			adminGroup.GET("/agent/problems/candidates", spHandler.GetCandidateProblems)
-			adminGroup.GET("/agent/problems/:id", spHandler.GetProblemDetail)
+			adminGroup.GET("/agent/users/:id/ac-history", chatHandler.GetUserACHistory)
+			adminGroup.GET("/agent/users/:id/failed-submissions", chatHandler.GetUserFailedSubmissions)
+			adminGroup.GET("/agent/users/:id/tag-stats", chatHandler.GetUserTagStats)
+			adminGroup.GET("/agent/problems/candidates", chatHandler.GetCandidateProblems)
+			adminGroup.GET("/agent/problems/:id", chatHandler.GetProblemDetail)
 		}
 
 		protected.GET("/profile", uHandler.GetProfile)
@@ -88,20 +87,16 @@ func SetupRouter(
 		protected.POST("/analysis/tasks/:id/feedback", analysisHandler.SubmitFeedback)
 		protected.GET("/analysis/tasks/:id/feedback", analysisHandler.GetFeedback)
 
-		protected.GET("/study-plan/sessions", spHandler.ListSessions)
-		protected.POST("/study-plan/sessions", spHandler.CreateSession)
-		protected.GET("/study-plan/sessions/:session_id", spHandler.GetSession)
-		protected.DELETE("/study-plan/sessions/:session_id", spHandler.DeleteSession)
-		protected.GET("/study-plan/sessions/:session_id/messages", spHandler.ListMessages)
-		protected.POST("/study-plan/sessions/:session_id/messages", spHandler.SendMessage)
-		protected.GET("/study-plan/turns/:turn_id", spHandler.GetTurn)
-		protected.GET("/study-plan/turns/:turn_id/stream", spHandler.StreamTurn)
-
-		protected.POST("/study-plan/tasks", spHandler.CreateTask)
-		protected.GET("/study-plan/tasks/:id/stream", spHandler.StreamTask)
-		protected.GET("/study-plan/tasks/:id", spHandler.GetTask)
-		protected.POST("/study-plan/tasks/:id/feedback", spHandler.SubmitFeedback)
-		protected.GET("/study-plan/tasks/:id/feedback", spHandler.GetFeedback)
+		protected.GET("/chat/sessions", chatHandler.ListSessions)
+		protected.POST("/chat/sessions", chatHandler.CreateSession)
+		protected.GET("/chat/sessions/:session_id", chatHandler.GetSession)
+		protected.DELETE("/chat/sessions/:session_id", chatHandler.DeleteSession)
+		protected.GET("/chat/sessions/:session_id/messages", chatHandler.ListMessages)
+		protected.POST("/chat/sessions/:session_id/messages", chatHandler.SendMessage)
+		protected.GET("/chat/turns/:turn_id", chatHandler.GetTurn)
+		protected.GET("/chat/turns/:turn_id/stream", chatHandler.StreamTurn)
+		protected.POST("/chat/turns/:turn_id/feedback", chatHandler.SubmitPlanFeedback)
+		protected.GET("/chat/turns/:turn_id/feedback", chatHandler.GetPlanFeedback)
 	}
 
 	return r
