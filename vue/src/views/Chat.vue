@@ -125,9 +125,39 @@
                       </router-link>
                     </div>
                   </div>
+                  <div v-if="message.turn_id" class="feedback-panel">
+                    <span class="feedback-label">这次回答有帮助吗？</span>
+                    <div class="feedback-actions">
+                      <button
+                        class="feedback-button"
+                        :class="{ active: feedbackByTurn[message.turn_id]?.helpful === true }"
+                        :disabled="feedbackSubmitting[message.turn_id]"
+                        @click="submitFeedback(message.turn_id, true)"
+                      >
+                        有帮助
+                      </button>
+                      <button
+                        class="feedback-button"
+                        :class="{ active: feedbackByTurn[message.turn_id]?.helpful === false }"
+                        :disabled="feedbackSubmitting[message.turn_id]"
+                        @click="submitFeedback(message.turn_id, false)"
+                      >
+                        需改进
+                      </button>
+                    </div>
+                    <input
+                      v-model.trim="feedbackDrafts[message.turn_id]"
+                      class="feedback-input"
+                      :disabled="feedbackSubmitting[message.turn_id]"
+                      placeholder="可选：补充反馈，帮助改进后续回答"
+                      @keydown.enter.prevent="submitFeedback(message.turn_id, feedbackByTurn[message.turn_id]?.helpful ?? true)"
+                    >
+                    <small v-if="feedbackMessage[message.turn_id]" class="feedback-message">{{ feedbackMessage[message.turn_id] }}</small>
+                  </div>
                 </template>
 
                 <template v-else>
+
                   <div class="message-text">{{ message.content }}</div>
                 </template>
               </div>
@@ -169,7 +199,7 @@
         <textarea
           id="study-chat-input"
           v-model.trim="draft"
-          class="composer-input"
+          class="composer-input" :disabled="sending || turnPending"
           placeholder="输入你的问题，例如：我最近图论建模总是卡住，先帮我分析问题，再给我安排一轮练习。"
           @keydown.enter.exact.prevent="handleSendMessage"
         ></textarea>
@@ -181,7 +211,7 @@
               <span v-if="loadingMessages" class="spinner spinner-dark"></span>
               <span v-else>刷新消息</span>
             </button>
-            <button class="sidebar-primary" :disabled="sending || !draft.trim()" @click="handleSendMessage">
+            <button class="sidebar-primary" :disabled="sending || turnPending || !draft.trim()" @click="handleSendMessage">
               <span v-if="sending" class="spinner"></span>
               <span v-else>发送</span>
             </button>
@@ -200,9 +230,11 @@ import {
   deleteChatSession,
   getErrorMessage,
   getChatMessages,
+  getChatPlanFeedback,
   getChatTurn,
   listChatSessions,
   sendChatMessage,
+  submitChatPlanFeedback,
 } from '../api'
 import { store } from '../store'
 
@@ -235,6 +267,10 @@ const messageError = ref('')
 const streamState = ref('idle')
 const streamMessage = ref('')
 const messageListRef = ref(null)
+const feedbackByTurn = ref({})
+const feedbackDrafts = ref({})
+const feedbackSubmitting = ref({})
+const feedbackMessage = ref({})
 
 let turnStream = null
 let turnStreamTurnId = 0
@@ -376,6 +412,50 @@ function parseAssistantPayload(message) {
   }
 }
 
+
+function assistantTurnIds(items) {
+  return [...new Set(items
+    .filter((item) => item.role === 'assistant' && Number(item.turn_id || 0) > 0)
+    .map((item) => Number(item.turn_id)))]
+}
+
+async function loadFeedbackForMessages(items) {
+  feedbackByTurn.value = {}
+  feedbackDrafts.value = {}
+  feedbackMessage.value = {}
+
+  await Promise.all(assistantTurnIds(items).map(async (turnId) => {
+    try {
+      const feedback = await getChatPlanFeedback(turnId)
+      feedbackByTurn.value[turnId] = feedback
+      feedbackDrafts.value[turnId] = feedback.comment || ''
+    } catch {
+      // A missing feedback record is the normal first-use state.
+    }
+  }))
+}
+
+async function submitFeedback(turnId, helpful) {
+  if (!turnId || feedbackSubmitting.value[turnId]) {
+    return
+  }
+
+  feedbackSubmitting.value[turnId] = true
+  feedbackMessage.value[turnId] = ''
+  try {
+    const feedback = await submitChatPlanFeedback(turnId, {
+      helpful,
+      comment: feedbackDrafts.value[turnId] || '',
+    })
+    feedbackByTurn.value[turnId] = feedback
+    feedbackDrafts.value[turnId] = feedback.comment || ''
+    feedbackMessage.value[turnId] = '反馈已保存。'
+  } catch (error) {
+    feedbackMessage.value[turnId] = getErrorMessage(error, '保存反馈失败，请稍后重试。')
+  } finally {
+    feedbackSubmitting.value[turnId] = false
+  }
+}
 async function ensureActiveSession() {
   if (activeSessionId.value > 0) {
     return activeSessionId.value
@@ -623,6 +703,11 @@ async function handleCreateSession() {
 }
 
 async function handleSendMessage() {
+  if (turnPending.value) {
+    messageError.value = '当前回复尚未完成，请等待后再继续发送。'
+    return
+  }
+
   const content = draft.value.trim()
   if (!content) {
     messageError.value = '先输入一条消息再发送。'
@@ -1391,4 +1476,58 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
-</style>
+
+.feedback-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.feedback-label,
+.feedback-message {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.feedback-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.feedback-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.feedback-button.active {
+  border-color: #0f766e;
+  background: #ccfbf1;
+  color: #115e59;
+}
+
+.feedback-button:disabled,
+.feedback-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.feedback-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}</style>

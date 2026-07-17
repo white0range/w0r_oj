@@ -5,64 +5,55 @@
         <span class="brand-mark">OJ</span>
         <div class="brand-copy">
           <strong>Gojo OJ</strong>
-          <span>Algorithms 路 Judge 路 AI Workflows</span>
+          <span>Algorithms, Judge, AI Workflows</span>
         </div>
       </router-link>
 
       <nav class="nav-links desktop-only">
-        <router-link to="/" class="nav-link">棰樺簱</router-link>
-        <router-link to="/leaderboard" class="nav-link">鎺掕姒?/router-link>
-        <router-link v-if="store.isLoggedIn" to="/chat" class="nav-link">AI 璁粌璁″垝</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">鎻愪氦璁板綍</router-link>
-        <router-link v-if="store.isLoggedIn" to="/profile" class="nav-link">涓汉涓績</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/users" class="nav-link nav-admin">绠＄悊鍚庡彴</router-link>
+        <router-link to="/" class="nav-link">题库</router-link>
+        <router-link to="/leaderboard" class="nav-link">排行榜</router-link>
+        <router-link v-if="store.isLoggedIn" to="/chat" class="nav-link">AI 学习助手</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">提交记录</router-link>
+        <router-link v-if="store.isLoggedIn" to="/profile" class="nav-link">个人中心</router-link>
+        <router-link v-if="store.isAdmin" to="/admin/users" class="nav-link nav-admin">管理后台</router-link>
       </nav>
 
       <div class="nav-actions desktop-only">
         <template v-if="store.isLoggedIn">
           <router-link to="/profile" class="profile-chip" :class="{ admin: store.isAdmin }">
             <span class="profile-avatar">{{ initials }}</span>
-            <span class="profile-copy">
-              <strong>{{ store.username }}</strong>
-              <small>{{ store.isAdmin ? 'Administrator' : 'Contestant' }}</small>
-            </span>
+            <span class="profile-copy"><strong>{{ store.username }}</strong><small>{{ store.isAdmin ? 'Administrator' : 'Contestant' }}</small></span>
           </router-link>
-          <button class="btn btn-ghost btn-sm" @click="logout">閫€鍑?/button>
+          <button class="btn btn-ghost btn-sm" @click="logout">退出</button>
         </template>
         <template v-else>
-          <router-link to="/login" class="btn btn-ghost btn-sm">鐧诲綍</router-link>
-          <router-link to="/register" class="btn btn-primary btn-sm">娉ㄥ唽</router-link>
+          <router-link to="/login" class="btn btn-ghost btn-sm">登录</router-link>
+          <router-link to="/register" class="btn btn-primary btn-sm">注册</router-link>
         </template>
       </div>
 
-      <button class="mobile-toggle" @click="menuOpen = !menuOpen" aria-label="Toggle navigation">
-        <span></span>
-        <span></span>
-      </button>
+      <button class="mobile-toggle" @click="menuOpen = !menuOpen" aria-label="Toggle navigation"><span></span><span></span></button>
     </div>
 
     <transition name="fade-slide">
       <div v-if="menuOpen" class="mobile-panel">
-        <router-link to="/" class="mobile-link" @click="closeMenu">棰樺簱</router-link>
-        <router-link to="/leaderboard" class="mobile-link" @click="closeMenu">鎺掕姒?/router-link>
-        <router-link v-if="store.isLoggedIn" to="/chat" class="mobile-link" @click="closeMenu">AI 璁粌璁″垝</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">鎻愪氦璁板綍</router-link>
-        <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">涓汉涓績</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/users" class="mobile-link" @click="closeMenu">绠＄悊鍚庡彴</router-link>
+        <router-link to="/" class="mobile-link" @click="closeMenu">题库</router-link>
+        <router-link to="/leaderboard" class="mobile-link" @click="closeMenu">排行榜</router-link>
+        <router-link v-if="store.isLoggedIn" to="/chat" class="mobile-link" @click="closeMenu">AI 学习助手</router-link>
+        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">提交记录</router-link>
+        <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">个人中心</router-link>
+        <router-link v-if="store.isAdmin" to="/admin/users" class="mobile-link" @click="closeMenu">管理后台</router-link>
         <div class="mobile-actions">
-          <template v-if="store.isLoggedIn">
-            <button class="btn btn-ghost btn-block" @click="logout">閫€鍑哄綋鍓嶈处鍙?/button>
-          </template>
+          <template v-if="store.isLoggedIn"><button class="btn btn-ghost btn-block" @click="logout">退出当前账号</button></template>
           <template v-else>
-            <router-link to="/login" class="btn btn-ghost btn-block" @click="closeMenu">鐧诲綍</router-link>
-            <router-link to="/register" class="btn btn-primary btn-block" @click="closeMenu">娉ㄥ唽</router-link>
+            <router-link to="/login" class="btn btn-ghost btn-block" @click="closeMenu">登录</router-link>
+            <router-link to="/register" class="btn btn-primary btn-block" @click="closeMenu">注册</router-link>
           </template>
         </div>
       </div>
     </transition>
   </header>
 </template>
-
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
