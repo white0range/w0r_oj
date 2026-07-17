@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,7 +87,15 @@ func (h *ragHandler) Handle(ctx context.Context, task Task) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("rag returned status %d", resp.StatusCode)
+		responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if readErr != nil {
+			return fmt.Errorf("rag returned status %d and response body could not be read: %w", resp.StatusCode, readErr)
+		}
+		message := strings.TrimSpace(string(responseBody))
+		if message == "" {
+			return fmt.Errorf("rag returned status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("rag returned status %d: %s", resp.StatusCode, message)
 	}
 	return nil
 }

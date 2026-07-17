@@ -11,7 +11,7 @@ services:
       DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-pro}
       GO_BACKEND_BASE_URL: ${GO_BACKEND_BASE_URL:-http://host.docker.internal:8080}
-      AGENT_DEBUG: ${AGENT_DEBUG:-false}
+      AGENT_DEBUG: ${AGENT_DEBUG:-true}
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}

@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,6 +45,10 @@ redis.call('ZADD', KEYS[3], ARGV[1], task)
 return task
 `, []string{pendingKey, processingKey, processingLeaseKey}, leaseUntil.Unix()).Result()
 	if err != nil {
+		// Lua returns nil when the pending list is empty; this is a normal poll result.
+		if errors.Is(err, redis.Nil) {
+			return "", nil
+		}
 		return "", err
 	}
 	if result == nil || result == false {
@@ -101,8 +106,8 @@ return 1
 
 func (q *queue) promoteRetries(ctx context.Context, now time.Time) error {
 	tasks, err := q.client.ZRangeByScore(ctx, retryAtKey, &redis.ZRangeBy{
-		Min: "-inf",
-		Max: fmt.Sprintf("%d", now.Unix()),
+		Min:   "-inf",
+		Max:   fmt.Sprintf("%d", now.Unix()),
 		Count: 100,
 	}).Result()
 	if err != nil {
@@ -123,8 +128,8 @@ return 1
 
 func (q *queue) recoverExpired(ctx context.Context, now time.Time) error {
 	tasks, err := q.client.ZRangeByScore(ctx, processingLeaseKey, &redis.ZRangeBy{
-		Min: "-inf",
-		Max: fmt.Sprintf("%d", now.Unix()),
+		Min:   "-inf",
+		Max:   fmt.Sprintf("%d", now.Unix()),
 		Count: 100,
 	}).Result()
 	if err != nil {

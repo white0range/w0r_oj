@@ -274,6 +274,7 @@ const feedbackMessage = ref({})
 
 let turnStream = null
 let turnStreamTurnId = 0
+let turnStatusPollTimer = null
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeSessionId.value) || null)
 
@@ -374,9 +375,42 @@ function closeTurnStream(resetState = true) {
   }
   turnStreamTurnId = 0
 
+  if (turnStatusPollTimer) {
+    window.clearInterval(turnStatusPollTimer)
+    turnStatusPollTimer = null
+  }
+
   if (resetState) {
     streamState.value = 'idle'
     streamMessage.value = ''
+  }
+}
+
+async function refreshTurnStatus(turnId, source = null) {
+  if (!turnId || (source && turnStream !== source)) {
+    return false
+  }
+
+  try {
+    const latestTurn = await getChatTurn(turnId)
+    if (source && turnStream !== source) {
+      return false
+    }
+    currentTurn.value = latestTurn
+
+    if (!TERMINAL_TURN_STATUSES.includes(latestTurn.status || '')) {
+      return false
+    }
+
+    closeTurnStream(false)
+    streamState.value = 'idle'
+    streamMessage.value = latestTurn.status === 'succeeded' ? '\u56de\u590d\u5df2\u751f\u6210\u5b8c\u6210\u3002' : '\u8fd9\u6b21\u56de\u590d\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002'
+    await loadSessions(false, activeSessionId.value)
+    await loadMessages(activeSessionId.value)
+    return true
+  } catch {
+    // Keep the existing state while a transient status request is retried.
+    return false
   }
 }
 
@@ -585,6 +619,9 @@ function connectTurnStream(turnId) {
   turnStreamTurnId = turnId
   streamState.value = 'connecting'
   streamMessage.value = '正在建立回复同步连接...'
+  turnStatusPollTimer = window.setInterval(() => {
+    void refreshTurnStatus(turnId, source)
+  }, 2000)
 
   source.onopen = () => {
     if (turnStream !== source) {
@@ -604,11 +641,7 @@ function connectTurnStream(turnId) {
       currentTurn.value = nextTurn
 
       if (TERMINAL_TURN_STATUSES.includes(nextTurn.status || '')) {
-        closeTurnStream(false)
-        streamState.value = 'idle'
-        streamMessage.value = nextTurn.status === 'succeeded' ? '回复已生成完成。' : '这次回复生成失败，请重试。'
-        await loadSessions(false, activeSessionId.value)
-        await loadMessages(activeSessionId.value)
+        await refreshTurnStatus(turnId, source)
       }
     } catch {
       closeTurnStream(false)
@@ -617,26 +650,25 @@ function connectTurnStream(turnId) {
     }
   }
 
-  source.onerror = () => {
+  source.onerror = async () => {
     if (turnStream !== source) {
       return
     }
 
-    if (TERMINAL_TURN_STATUSES.includes(currentTurn.value?.status || '')) {
-      closeTurnStream(false)
-      streamState.value = 'idle'
+    const reachedTerminalState = await refreshTurnStatus(turnId, source)
+    if (reachedTerminalState || turnStream !== source) {
       return
     }
 
     if (source.readyState === EventSource.CLOSED) {
       closeTurnStream(false)
       streamState.value = 'error'
-      streamMessage.value = '实时连接已关闭，请刷新当前会话。'
+      streamMessage.value = '\u5b9e\u65f6\u8fde\u63a5\u5df2\u5173\u95ed\uff0c\u8bf7\u5237\u65b0\u5f53\u524d\u4f1a\u8bdd\u3002'
       return
     }
 
     streamState.value = 'reconnecting'
-    streamMessage.value = '连接短暂中断，正在自动重连...'
+    streamMessage.value = '\u8fde\u63a5\u77ed\u6682\u4e2d\u65ad\uff0c\u6b63\u5728\u81ea\u52a8\u91cd\u8fde...'
   }
 }
 
@@ -722,15 +754,17 @@ async function handleSendMessage() {
     const sessionId = await ensureActiveSession()
     const createdTurn = await sendChatMessage(sessionId, { content })
     draft.value = ''
-    await loadSessions(false, sessionId)
-    await loadMessages(sessionId)
     currentTurn.value = {
       id: createdTurn.turn_id,
       status: createdTurn.status,
       model: createdTurn.model,
       session_id: createdTurn.session_id,
     }
-    connectTurnStream(createdTurn.turn_id)
+    await loadSessions(false, sessionId)
+    await loadMessages(sessionId)
+    if (currentTurn.value?.id === createdTurn.turn_id && turnPending.value) {
+      connectTurnStream(createdTurn.turn_id)
+    }
   } catch (error) {
     messageError.value = getErrorMessage(error, '发送消息失败。')
   } finally {
