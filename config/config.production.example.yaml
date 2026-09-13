@@ -1,0 +1,66 @@
+# Safe-to-commit configuration for docker-compose.prod.yml.
+# Secrets intentionally remain blank: Compose supplies them through GOJO_* env vars.
+app:
+  env: production
+
+server:
+  port: 8080
+  # Set this to the IP/CIDR of the reverse proxy that connects to the API.
+  # Keep it empty for the local production simulation until its Docker subnet
+  # is fixed; otherwise every visitor could share the gateway's rate-limit key.
+  trusted_proxy_cidrs: []
+  read_header_timeout_seconds: 5
+  read_timeout_seconds: 15
+  write_timeout_seconds: 0
+  idle_timeout_seconds: 60
+  max_header_bytes: 1048576
+  max_request_body_bytes: 1048576
+
+sql:
+  dsn: ""
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime_seconds: 3600
+
+redis:
+  addr: "redis:6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret: ""
+  access_ttl_minutes: 120
+  refresh_ttl_hours: 168
+
+ai:
+  api_key: ""
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  timeout_seconds: 30
+
+elasticsearch:
+  addresses:
+    - "http://elasticsearch:9200"
+
+judge:
+  worker_count: 3
+  compile_timeout_seconds: 45
+
+rate_limit:
+  public_ip_per_minute: 300
+  login_ip_per_minute: 10
+  login_account_per_minute: 5
+  register_ip_per_hour: 3
+  successful_registrations_per_day: 10
+  submit_per_five_seconds: 1
+  submit_per_hour: 60
+  chat_messages_per_day: 2
+  search_ip_per_minute: 60
+  sse_tickets_per_minute: 20
+  sse_connections_per_user: 3
+
+chat:
+  worker_count: 3
+  agent_base_url: "http://agent:8000"
+  agent_timeout_seconds: 120
+  agent_service_token: ""

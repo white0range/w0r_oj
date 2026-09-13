@@ -1,37 +1,34 @@
 package search
 
 import (
-	"gojo/config"
+	"context"
 	"log"
 
 	"github.com/elastic/go-elasticsearch/v8"
+
+	"gojo/config"
 )
 
-// EsClient 全局的 ES 客户端
+// EsClient is the shared Elasticsearch client.
 var EsClient *elasticsearch.Client
 
-// InitElasticsearch 初始化 ES 连接
 func InitElasticsearch() {
-	// 极其清爽的配置，因为我们在 Docker 里关了密码验证
-	cfg := elasticsearch.Config{
-		//Addresses: []string{
-		//	"http://localhost:9200", // ES 的默认地址
-		//},
+	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: config.GlobalConfig.Elasticsearch.Addresses,
-	}
-
-	client, err := elasticsearch.NewClient(cfg)
+	})
 	if err != nil {
-		log.Fatalf("❌ 致命错误：无法创建 ES 客户端: %s", err)
+		log.Fatalf("create Elasticsearch client: %v", err)
 	}
 
-	// Ping 一下，确保网络是通的
 	res, err := client.Info()
 	if err != nil {
-		log.Fatalf("❌ 致命错误：连不上 ES 引擎: %s", err)
+		log.Fatalf("connect to Elasticsearch: %v", err)
 	}
-	defer res.Body.Close()
+	res.Body.Close()
 
-	log.Printf("🚀 Elasticsearch 连接成功！集群信息: %s\n", res.Status())
 	EsClient = client
+	if err := EnsureProblemIndex(context.Background()); err != nil {
+		log.Fatalf("initialize IK problem index: %v", err)
+	}
+	log.Printf("Elasticsearch connected and IK problem index is ready")
 }

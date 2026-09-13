@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,15 +25,16 @@ import (
 var judgeRunnerSource string
 
 type runnerExecResult struct {
-	ExitCode     int    `json:"exit_code"`
-	Signal       int    `json:"signal"`
-	WallTimeMS   int64  `json:"wall_time_ms"`
-	CPUTimeMS    int64  `json:"cpu_time_ms"`
-	MaxRSSKB     int64  `json:"max_rss_kb"`
-	WallTimedOut bool   `json:"wall_timed_out"`
-	Stdout       string `json:"stdout"`
-	Stderr       string `json:"stderr"`
-	Error        string `json:"error"`
+	ExitCode       int    `json:"exit_code"`
+	Signal         int    `json:"signal"`
+	WallTimeMS     int64  `json:"wall_time_ms"`
+	CPUTimeMS      int64  `json:"cpu_time_ms"`
+	MaxRSSKB       int64  `json:"max_rss_kb"`
+	WallTimedOut   bool   `json:"wall_timed_out"`
+	OutputExceeded bool   `json:"output_exceeded"`
+	Stdout         string `json:"stdout"`
+	Stderr         string `json:"stderr"`
+	Error          string `json:"error"`
 }
 
 const (
@@ -45,6 +47,9 @@ const (
 	compileNanoCPUs         = 1 * 1e9
 	compilePidsLimit        = 128
 	runtimePidsLimit        = 64
+	maxProgramOutputBytes   = 1 << 20
+	maxCompileOutputBytes   = 1 << 20
+	maxRunnerResponseBytes  = 2 << 20
 )
 
 func CompileCode(ctx context.Context, code string, workDir string) (bool, string, error) {
@@ -94,7 +99,7 @@ func CompileCode(ctx context.Context, code string, workDir string) (bool, string
 	if err != nil {
 		return false, "", err
 	}
-	defer docker.DockerClient.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+	defer RemoveSandbox(context.Background(), resp.ID)
 
 	if err := docker.DockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return false, "", fmt.Errorf("start compile container failed: %w", err)
@@ -231,10 +236,13 @@ func ExecTestCase(ctx context.Context, containerID string, input string, cpuLimi
 	_, _ = hijackedResp.Conn.Write([]byte(input))
 	_ = hijackedResp.CloseWrite()
 
-	var stdoutBuf bytes.Buffer
-	var stderrBuf bytes.Buffer
-	_, err = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, hijackedResp.Reader)
+	stdoutBuf := newCappedBuffer(maxRunnerResponseBytes)
+	stderrBuf := newCappedBuffer(maxRunnerResponseBytes)
+	_, err = stdcopy.StdCopy(stdoutBuf, stderrBuf, hijackedResp.Reader)
 	if err != nil {
+		if errors.Is(err, errOutputTooLarge) {
+			return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("judge runner response exceeded %d bytes", maxRunnerResponseBytes)}
+		}
 		if ctx.Err() == context.DeadlineExceeded {
 			return model.JudgeResult{
 				Status:       model.StatusTimeLimitExceeded,
@@ -264,6 +272,15 @@ func ExecTestCase(ctx context.Context, containerID string, input string, cpuLimi
 		return model.JudgeResult{
 			Status: model.StatusSystemError,
 			Error:  fmt.Errorf("judge runner failed: %s", runnerResult.Error),
+		}
+	}
+	if runnerResult.OutputExceeded {
+		return model.JudgeResult{
+			Status:       model.StatusOutputLimitExceeded,
+			Output:       fmt.Sprintf("output limit exceeded (%d bytes)", maxProgramOutputBytes),
+			TimeCost:     int(runnerResult.CPUTimeMS),
+			WallTimeCost: int(runnerResult.WallTimeMS),
+			MemoryCost:   int(runnerResult.MaxRSSKB),
 		}
 	}
 
@@ -304,11 +321,15 @@ func ExecTestCase(ctx context.Context, containerID string, input string, cpuLimi
 	return result
 }
 
-func RemoveSandbox(ctx context.Context, containerID string) {
+func RemoveSandbox(_ context.Context, containerID string) {
 	if containerID == "" {
 		return
 	}
-	if err := docker.DockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+	// A task context may already be cancelled during forced shutdown. Cleanup
+	// must use its own short-lived context so the container is not left behind.
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := docker.DockerClient.ContainerRemove(cleanupCtx, containerID, container.RemoveOptions{Force: true}); err != nil {
 		fmt.Printf("warning: failed to remove sandbox %s: %v\n", containerID, err)
 	}
 }
@@ -371,18 +392,55 @@ func readCompileContainerOutput(ctx context.Context, containerID string) (string
 	}
 	defer out.Close()
 
-	var stdoutBuf, stderrBuf bytes.Buffer
-	_, _ = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, out)
+	stdoutBuf := newCappedBuffer(maxCompileOutputBytes)
+	stderrBuf := newCappedBuffer(maxCompileOutputBytes)
+	_, copyErr := stdcopy.StdCopy(stdoutBuf, stderrBuf, out)
+	truncated := errors.Is(copyErr, errOutputTooLarge)
+	if copyErr != nil && !truncated {
+		return "", copyErr
+	}
 
 	stderrText := strings.TrimSpace(stderrBuf.String())
 	stdoutText := strings.TrimSpace(stdoutBuf.String())
 
+	var output string
 	switch {
 	case stderrText != "" && stdoutText != "":
-		return stderrText + "\n" + stdoutText, nil
+		output = stderrText + "\n" + stdoutText
 	case stderrText != "":
-		return stderrText, nil
+		output = stderrText
 	default:
-		return stdoutText, nil
+		output = stdoutText
 	}
+	if truncated {
+		output += fmt.Sprintf("\n[compile output truncated at %d bytes]", maxCompileOutputBytes)
+	}
+	return output, nil
 }
+
+var errOutputTooLarge = errors.New("output exceeds limit")
+
+type cappedBuffer struct {
+	buffer bytes.Buffer
+	limit  int
+}
+
+func newCappedBuffer(limit int) *cappedBuffer {
+	return &cappedBuffer{limit: limit}
+}
+
+func (b *cappedBuffer) Write(data []byte) (int, error) {
+	remaining := b.limit - b.buffer.Len()
+	if remaining <= 0 {
+		return len(data), errOutputTooLarge
+	}
+	if len(data) > remaining {
+		_, _ = b.buffer.Write(data[:remaining])
+		return len(data), errOutputTooLarge
+	}
+	return b.buffer.Write(data)
+}
+
+func (b *cappedBuffer) Bytes() []byte { return b.buffer.Bytes() }
+
+func (b *cappedBuffer) String() string { return b.buffer.String() }

@@ -6,14 +6,13 @@ import (
 	"os"
 	"time"
 
-	"gojo/infrastructure/websocket"
 	"gojo/internal/judge/dto"
 	"gojo/internal/judge/model"
 	"gojo/internal/judge/repository"
 	"gojo/internal/judge/sandbox"
+	problemlimits "gojo/internal/problem/limits"
+	"gojo/internal/realtime"
 	"gojo/pkg/compare"
-
-	"github.com/gin-gonic/gin"
 )
 
 type JudgeService struct {
@@ -54,10 +53,10 @@ func (s *JudgeService) Process(ctx context.Context, task dto.JudgeTask) error {
 		return s.complete(ctx, task, string(model.StatusCompileError), info, 0, 0)
 	}
 
-	memoryLimitMB := problem.MemoryLimit
-	if memoryLimitMB <= 0 {
-		memoryLimitMB = 256
+	if !problemlimits.ValidTimeMS(problem.TimeLimit) || !problemlimits.ValidMemoryMB(problem.MemoryLimit) {
+		return s.complete(ctx, task, "SE", "problem resource limits are outside the allowed range", 0, 0)
 	}
+	memoryLimitMB := problem.MemoryLimit
 
 	containerID, err := sandbox.StartPersistentSandbox(ctx, workDir, int64(memoryLimitMB))
 	if err != nil {
@@ -66,9 +65,6 @@ func (s *JudgeService) Process(ctx context.Context, task dto.JudgeTask) error {
 	defer sandbox.RemoveSandbox(ctx, containerID)
 
 	cpuLimitMS := problem.TimeLimit
-	if cpuLimitMS <= 0 {
-		cpuLimitMS = 1000
-	}
 	wallLimitMS := cpuLimitMS * 2
 
 	finalStatus := string(model.StatusAccepted)
@@ -118,8 +114,7 @@ func (s *JudgeService) complete(ctx context.Context, task dto.JudgeTask, status,
 		return nil
 	}
 
-	websocket.SendWsMessage(fmt.Sprintf("%d", task.UserID), gin.H{
-		"type":          "JUDGE_RESULT",
+	realtime.Publish(task.UserID, "judge_result", map[string]any{
 		"submission_id": task.SubmissionID,
 		"status":        status,
 	})

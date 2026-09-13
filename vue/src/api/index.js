@@ -180,6 +180,11 @@ export async function getSubmission(id) {
   return normalizeSubmission(unwrapData(body))
 }
 
+export async function createEventsTicket() {
+  const body = getBody(await api.post('/events/ticket'))
+  return unwrapData(body).ticket || ''
+}
+
 export async function getMySubmissions(params = {}) {
   const body = getBody(await api.get('/my-submissions', { params }))
   const data = unwrapData(body)
@@ -238,6 +243,11 @@ export async function sendChatMessage(sessionId, payload) {
 export async function getChatTurn(id) {
   const body = getBody(await api.get(`/chat/turns/${id}`))
   return unwrapData(body)
+}
+
+export async function createChatStreamTicket(id) {
+  const body = getBody(await api.post(`/chat/turns/${id}/stream-ticket`))
+  return unwrapData(body).ticket || ''
 }
 
 export async function submitChatPlanFeedback(turnId, payload) {

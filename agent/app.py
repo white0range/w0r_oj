@@ -1,5 +1,6 @@
 import hmac
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
 
@@ -8,7 +9,30 @@ from rag.index_service import delete_problem_doc, upsert_problem_doc
 from rag.problem_doc_service import fetch_problem_doc_record
 from schemas import ChatRequest, ChatResponse, MessageResponse, ProblemIndexSyncRequest, SessionSummaryRequest, SessionSummaryResponse
 
-app = FastAPI()
+MIN_PRODUCTION_SECRET_LENGTH = 32
+
+
+def _is_production() -> bool:
+    return os.getenv("APP_ENV", "dev").strip().lower() in {"prod", "production"}
+
+
+def _validate_startup_config() -> None:
+    if not _is_production():
+        return
+
+    token = os.getenv("AGENT_SERVICE_TOKEN", "").strip()
+    lower = token.lower()
+    if len(token) < MIN_PRODUCTION_SECRET_LENGTH or "replace-with" in lower or "change-me" in lower:
+        raise RuntimeError("AGENT_SERVICE_TOKEN must be a random secret of at least 32 characters in production")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    _validate_startup_config()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def _require_service_token(token: str) -> None:

@@ -38,6 +38,7 @@ def _build_model() -> ChatDeepSeek:
         "model": os.getenv("LLM_MODEL", "deepseek-v4-pro"),
         "api_key": api_key,
         "temperature": 0,
+        "timeout": int(os.getenv("AGENT_LLM_TIMEOUT_SECONDS", "120")),
     }
     base_url = _normalize_base_url()
     if base_url:

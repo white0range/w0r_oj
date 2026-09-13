@@ -67,5 +67,5 @@ func extractBearerToken(c *gin.Context) string {
 		return ""
 	}
 
-	return c.Query("token")
+	return ""
 }

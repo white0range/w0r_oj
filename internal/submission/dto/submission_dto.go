@@ -15,6 +15,6 @@ type MySubmissionsResponse struct {
 // UserID 不需要他传，我们的保安（AuthMiddleware）会从手环里掏出来！
 type SubmitRequest struct {
 	ProblemID uint   `json:"problem_id" binding:"required"`
-	Language  string `json:"language" binding:"required,max=20"`
+	Language  string `json:"language" binding:"required,oneof=go"`
 	Code      string `json:"code" binding:"required,max=65536"`
 }

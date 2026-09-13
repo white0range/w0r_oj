@@ -43,7 +43,14 @@ func (h *SubmissionHandler) SubmitCode(c *gin.Context) {
 
 	submission, err := h.svc.SubmitCode(c.Request.Context(), userID, req)
 	if err != nil {
-		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "submit code failed")
+		switch {
+		case errors.Is(err, apperror.ErrUnsupportedLanguage):
+			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "only Go submissions are supported")
+		case errors.Is(err, apperror.ErrProblemNotFound):
+			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "problem not found")
+		default:
+			response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "submit code failed")
+		}
 		return
 	}
 

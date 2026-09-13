@@ -1,0 +1,201 @@
+# Local production-mode simulation. The only host port is the Nginx gateway;
+# all application dependencies remain on the private oj-net network.
+name: gojo-local-production
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: vue/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LOCAL_HTTP_PORT:-8088}:80"
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - oj-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 165s
+    environment:
+      APP_ENV: production
+      TMPDIR: ${JUDGE_WORK_DIR:-/tmp/gojo-judge}
+      GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
+      GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+      GOJO_JWT_SECRET: ${GOJO_JWT_SECRET:?set GOJO_JWT_SECRET in .env.local-production}
+      GOJO_AI_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GOJO_AI_BASE_URL: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
+      GOJO_AI_MODEL: ${LLM_MODEL:-deepseek-chat}
+      GOJO_CHAT_AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env.local-production}
+    volumes:
+      # The current in-process Judge needs Docker to create sandbox containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The path must be identical inside the API container and Docker host.
+      - ${JUDGE_WORK_DIR:-/tmp/gojo-judge}:${JUDGE_WORK_DIR:-/tmp/gojo-judge}
+    group_add:
+      - "${DOCKER_GID:-0}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      agent:
+        condition: service_started
+    networks:
+      - oj-net
+
+  seed-problems:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    command: ["/app/seed-problems"]
+    environment:
+      APP_ENV: production
+      GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
+      GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+      GOJO_JWT_SECRET: ${GOJO_JWT_SECRET:?set GOJO_JWT_SECRET in .env.local-production}
+      GOJO_CHAT_AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env.local-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - oj-net
+
+  bootstrap-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    command: ["/app/bootstrap-admin"]
+    environment:
+      APP_ENV: production
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
+      GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+      GOJO_JWT_SECRET: ${GOJO_JWT_SECRET:?set GOJO_JWT_SECRET in .env.local-production}
+      GOJO_CHAT_AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env.local-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - oj-net
+
+  agent:
+    build:
+      context: ./agent
+    restart: unless-stopped
+    stop_grace_period: 165s
+    environment:
+      APP_ENV: production
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      GO_BACKEND_BASE_URL: http://api:8080
+      AGENT_DEBUG: "false"
+      AGENT_LLM_TIMEOUT_SECONDS: 120
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env.local-production}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      QDRANT_URL: http://qdrant:6333
+      MEMORY_COLLECTION: ${MEMORY_COLLECTION:-chat_memories}
+      MEMORY_TOP_K: ${MEMORY_TOP_K:-3}
+    depends_on:
+      qdrant:
+        condition: service_started
+    networks:
+      - oj-net
+
+  mysql:
+    image: mysql:8.4.5
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gojo_local}
+      MYSQL_USER: ${MYSQL_USER:-gojo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env.local-production}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env.local-production}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - oj-net
+
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - oj-net
+
+  elasticsearch:
+    build:
+      context: ./infrastructure/elasticsearch
+    image: gojo-elasticsearch-ik:8.11.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - oj-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - ./infrastructure/qdrant/config.yaml:/qdrant/config/config.yaml:ro
+    networks:
+      - oj-net
+
+networks:
+  oj-net:
+    driver: bridge
+
+volumes:
+  elasticsearch_data:
+  mysql_data:
+  qdrant_storage:
+  redis_data:

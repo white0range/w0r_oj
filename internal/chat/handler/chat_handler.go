@@ -10,12 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"gojo/config"
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
 	"gojo/internal/app/response"
 	"gojo/internal/chat/dto"
 	"gojo/internal/chat/model"
 	"gojo/internal/chat/service"
+	"gojo/internal/realtime"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -256,6 +258,35 @@ func (h *ChatHandler) GetTurn(c *gin.Context) {
 	response.OK(c, turn)
 }
 
+// CreateStreamTicket creates a short-lived, one-time ticket bound to this
+// exact turn. The browser uses it only in the EventSource URL.
+func (h *ChatHandler) CreateStreamTicket(c *gin.Context) {
+	turnID, ok := parseTurnID(c)
+	if !ok {
+		return
+	}
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+	if _, err := h.svc.GetChatTurn(c.Request.Context(), userID, turnID); err != nil {
+		switch {
+		case errors.Is(err, apperror.ErrForbidden):
+			response.FailWithMessage(c, http.StatusForbidden, ecode.Forbidden, "cannot access other users' chat turns")
+		default:
+			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "chat turn not found")
+		}
+		return
+	}
+
+	ticket, err := realtime.CreateTicket(c.Request.Context(), userID, realtime.ScopeChatTurn, turnID)
+	if err != nil {
+		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "create chat stream ticket failed")
+		return
+	}
+	response.OK(c, gin.H{"ticket": ticket, "expires_in_seconds": realtime.TicketTTLSeconds()})
+}
+
 func (h *ChatHandler) StreamTurn(c *gin.Context) {
 	turnID, ok := parseTurnID(c)
 	if !ok {
@@ -282,6 +313,13 @@ func (h *ChatHandler) StreamTurn(c *gin.Context) {
 		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "streaming is not supported")
 		return
 	}
+
+	releaseConnection, acquired := realtime.AcquireConnection(userID, config.GlobalConfig.RateLimit.SSEConnectionsPerUser)
+	if !acquired {
+		response.FailWithMessage(c, http.StatusTooManyRequests, ecode.TooManyRequests, "too many active SSE connections")
+		return
+	}
+	defer releaseConnection()
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")

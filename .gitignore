@@ -18,10 +18,14 @@ vendor/
 config/config.yaml
 config/config.*.yaml
 !config/config.example.yaml
+!config/config.production.example.yaml
 
 # local data
 redis_data/
 mysql_data/
+
+# frontend dependencies
+vue/node_modules/
 
 # local cache / build artifacts
 .gocache
@@ -33,5 +37,5 @@ __pycache__/
 # local environment variables
 .env
 !.env.example
-
+.env.local-production
 seed_problems/

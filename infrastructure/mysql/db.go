@@ -54,3 +54,15 @@ func InitDB() {
 
 	fmt.Println("database schema migrated successfully")
 }
+
+// Close releases the underlying SQL connection pool during shutdown.
+func Close() error {
+	if DB == nil {
+		return nil
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}

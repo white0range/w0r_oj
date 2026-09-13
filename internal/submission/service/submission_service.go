@@ -2,26 +2,47 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"gojo/internal/app/apperror"
 	judgeDTO "gojo/internal/judge/dto"
 	judgeQueue "gojo/internal/judge/queue"
+	problemModel "gojo/internal/problem/model"
 	"gojo/internal/submission/dto"
 	"gojo/internal/submission/model"
 	"gojo/internal/submission/repository"
 )
 
-type SubmissionService struct {
-	repo  repository.SubmissionRepository
-	queue *judgeQueue.Queue
+type problemReader interface {
+	GetProblemByID(ctx context.Context, id string) (*problemModel.Problem, error)
 }
 
-func NewSubmissionService(r repository.SubmissionRepository) *SubmissionService {
-	return &SubmissionService{repo: r, queue: judgeQueue.New()}
+type SubmissionService struct {
+	repo     repository.SubmissionRepository
+	problems problemReader
+	queue    *judgeQueue.Queue
+}
+
+func NewSubmissionService(r repository.SubmissionRepository, problems problemReader) *SubmissionService {
+	return &SubmissionService{repo: r, problems: problems, queue: judgeQueue.New()}
 }
 
 func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto.SubmitRequest) (*model.Submission, error) {
+	if req.Language != "go" {
+		return nil, apperror.ErrUnsupportedLanguage
+	}
+	if s.problems == nil {
+		return nil, errors.New("problem repository is not configured")
+	}
+	if _, err := s.problems.GetProblemByID(ctx, strconv.FormatUint(uint64(req.ProblemID), 10)); err != nil {
+		if errors.Is(err, apperror.ErrProblemNotFound) {
+			return nil, apperror.ErrProblemNotFound
+		}
+		return nil, fmt.Errorf("validate problem: %w", err)
+	}
+
 	submission := model.Submission{
 		UserID:    userID,
 		ProblemID: req.ProblemID,

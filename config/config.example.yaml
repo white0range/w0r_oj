@@ -6,6 +6,9 @@ app:
 
 server:
   port: 8080
+  # Keep empty for direct Go access. After Nginx is deployed, list only the
+  # proxy's CIDR here, so IP rate limits use X-Forwarded-For safely.
+  trusted_proxy_cidrs: []
   read_header_timeout_seconds: 5
   read_timeout_seconds: 15
   # Must remain 0 while Chat SSE is served directly by Go.
@@ -25,6 +28,7 @@ redis:
   db: 0
 
 jwt:
+  # In prod/production this must be a random value of at least 32 characters.
   secret: ""
 
 ai:
@@ -41,8 +45,23 @@ judge:
   worker_count: 3
   compile_timeout_seconds: 45
 
+rate_limit:
+  public_ip_per_minute: 300
+  login_ip_per_minute: 10
+  login_account_per_minute: 5
+  register_ip_per_hour: 3
+  successful_registrations_per_day: 10
+  submit_per_five_seconds: 1
+  submit_per_hour: 60
+  chat_messages_per_day: 2
+  search_ip_per_minute: 60
+  sse_tickets_per_minute: 20
+  sse_connections_per_user: 3
+
 chat:
   worker_count: 3
   agent_base_url: "http://localhost:8000"
-  agent_timeout_seconds: 60
-  agent_service_token: "replace-with-a-long-random-secret"
+  agent_timeout_seconds: 120
+  # Must be identical to AGENT_SERVICE_TOKEN. In prod/production it must be
+  # a random value of at least 32 characters, not a sample placeholder.
+  agent_service_token: ""

@@ -1,0 +1,28 @@
+# Source-control and local IDE state
+.git
+.gitignore
+.idea
+.vscode
+
+# Local runtime configuration and secrets
+.env
+.env.*
+config/config.dev.yaml
+config/config.test.yaml
+
+# Build outputs and dependencies are rebuilt in their own Docker stages
+server.exe
+*.exe
+vue/node_modules
+vue/dist
+node_modules
+
+# Local data and logs must never be copied into an image
+*.log
+mysql_data
+redis_data
+elasticsearch_data
+qdrant_storage
+
+# Documentation and local deployment artifacts are not required by the Go build
+LOCAL_PRODUCTION.md

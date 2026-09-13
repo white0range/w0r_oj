@@ -39,7 +39,7 @@ func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string
 	}
 	if len(tags) > 0 {
 		filter = append(filter, map[string]interface{}{
-			"terms": map[string]interface{}{"tags.keyword": tags},
+			"terms": map[string]interface{}{"tags": tags},
 		})
 	}
 
@@ -55,7 +55,7 @@ func (r *problemSearchRepoES) SearchProblems(ctx context.Context, keyword string
 
 	res, err := search.EsClient.Search(
 		search.EsClient.Search.WithContext(ctx),
-		search.EsClient.Search.WithIndex("problems"),
+		search.EsClient.Search.WithIndex(search.ProblemIndexAlias),
 		search.EsClient.Search.WithBody(&buf),
 		search.EsClient.Search.WithTrackTotalHits(true),
 	)
@@ -92,7 +92,7 @@ func (r *problemSearchRepoES) UpsertProblemToES(ctx context.Context, doc model.E
 	}
 
 	req := esapi.IndexRequest{
-		Index:      "problems",
+		Index:      search.ProblemIndexAlias,
 		DocumentID: strconv.Itoa(int(doc.ID)),
 		Body:       bytes.NewReader(body),
 		Refresh:    "true",
@@ -112,7 +112,7 @@ func (r *problemSearchRepoES) UpsertProblemToES(ctx context.Context, doc model.E
 
 func (r *problemSearchRepoES) DeleteProblemFromES(ctx context.Context, problemID uint) error {
 	req := esapi.DeleteRequest{
-		Index:      "problems",
+		Index:      search.ProblemIndexAlias,
 		DocumentID: strconv.Itoa(int(problemID)),
 		Refresh:    "true",
 	}

@@ -9,8 +9,8 @@ import (
 type ProblemRequest struct {
 	Title       string `json:"title" binding:"required,max=200"`
 	Description string `json:"description" binding:"required,max=32768"`
-	TimeLimit   int    `json:"time_limit"` // 如果前端不传，在 Controller 里我们会给它赋默认值
-	MemoryLimit int    `json:"memory_limit"`
+	TimeLimit   int    `json:"time_limit" binding:"omitempty,min=100,max=10000"` // milliseconds
+	MemoryLimit int    `json:"memory_limit" binding:"omitempty,min=16,max=512"`  // megabytes
 
 	// 直接复用 TestCaseRequest！
 	TestCases []TestCaseRequest `json:"test_cases" binding:"max=10"`

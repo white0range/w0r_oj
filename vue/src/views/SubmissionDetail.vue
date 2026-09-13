@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page">
     <section v-if="loading" class="loading-state">
       <strong>提交详情加载中</strong>
@@ -52,8 +52,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getSubmission } from '../api'
-import { store } from '../store'
+import { createEventsTicket, getSubmission } from '../api'
 
 const route = useRoute()
 const routeId = computed(() => route.params.id)
@@ -118,22 +117,25 @@ function closeSocket() {
   }
 }
 
-function openSocket(submissionId) {
-  const token = store.token
-  if (!token) {
-    startPolling()
-    return
-  }
-
+async function openSocket(submissionId) {
   closeSocket()
   stopSocketFallbackTimer()
   suppressSocketFallback = false
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  socket = new WebSocket(`${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
+  try {
+    const ticket = await createEventsTicket()
+    if (!ticket || !isPendingSubmission()) {
+      startPolling()
+      return
+    }
+    socket = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`)
+  } catch {
+    startPolling()
+    return
+  }
 
   socketFallbackTimer = setTimeout(() => {
-    if (socket && socket.readyState !== WebSocket.OPEN && isPendingSubmission()) {
+    if (socket && socket.readyState !== EventSource.OPEN && isPendingSubmission()) {
       startPolling()
     }
   }, SOCKET_FALLBACK_DELAY_MS)
@@ -143,16 +145,21 @@ function openSocket(submissionId) {
     stopPolling()
   }
 
-  socket.onmessage = (event) => {
+  socket.addEventListener('judge_result', (event) => {
     try {
       const payload = JSON.parse(event.data)
       if (Number(payload.submission_id) === Number(submissionId)) {
-        fetchSubmission()
+        void fetchSubmission()
       }
     } catch {}
-  }
+  })
 
   socket.onerror = () => {
+    if (socket) {
+      suppressSocketFallback = true
+      socket.close()
+      socket = null
+    }
     if (isPendingSubmission()) {
       startPolling()
     }
@@ -163,13 +170,11 @@ function openSocket(submissionId) {
     const shouldFallback = !suppressSocketFallback && isPendingSubmission()
     suppressSocketFallback = false
     socket = null
-
     if (shouldFallback) {
       startPolling()
     }
   }
 }
-
 onMounted(async () => {
   await fetchSubmission()
 

@@ -2,19 +2,19 @@ package handler
 
 import (
 	"errors"
-	"fmt"
+
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	gorillaWS "github.com/gorilla/websocket"
 
 	"gojo/config"
-	"gojo/infrastructure/websocket"
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/middlewares"
 	"gojo/internal/app/response"
+	"gojo/internal/realtime"
 	"gojo/internal/user/dto"
 	"gojo/internal/user/service"
 )
@@ -36,6 +36,13 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
+	releaseRegistrationSlot, reserved := middlewares.ReserveSuccessfulRegistrationSlot(c)
+	if !reserved {
+		return
+	}
+	successfulRegistration := false
+	defer func() { releaseRegistrationSlot(successfulRegistration) }()
+
 	if err := h.svc.RegisterUser(c.Request.Context(), req); err != nil {
 		if errors.Is(err, apperror.ErrUsernameExists) {
 			response.FailWithMessage(c, http.StatusConflict, ecode.Conflict, "username already exists")
@@ -45,6 +52,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
+	successfulRegistration = true
 	response.OK(c, nil)
 }
 
@@ -52,6 +60,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 	var req dto.UserAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, http.StatusBadRequest, ecode.InvalidParams)
+		return
+	}
+	if !middlewares.LoginAccountRateLimit(c, req.Username) {
 		return
 	}
 
@@ -201,33 +212,6 @@ func (h *UserHandler) AdminUnbanUser(c *gin.Context) {
 	response.OK(c, gin.H{"user_id": targetID, "status": "active"})
 }
 
-func (h *UserHandler) ConnectWS(c *gin.Context) {
-	userIDAny, exists := c.Get("userID")
-	if !exists {
-		response.FailWithMessage(c, http.StatusUnauthorized, ecode.Unauthorized, "unauthorized websocket request")
-		return
-	}
-
-	userID := fmt.Sprintf("%v", userIDAny)
-	conn, err := websocket.Upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		fmt.Println("websocket upgrade failed:", err)
-		return
-	}
-
-	websocket.WsClients.Store(userID, conn)
-	defer func() {
-		conn.Close()
-		websocket.WsClients.Delete(userID)
-	}()
-
-	for {
-		if _, _, readErr := conn.ReadMessage(); readErr != nil {
-			break
-		}
-	}
-}
-
 func parseUserID(c *gin.Context) (uint, bool) {
 	userIDUint64, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -255,13 +239,7 @@ func currentUserID(c *gin.Context) (uint, bool) {
 }
 
 func disconnectUserRealtime(userID uint) {
-	if client, ok := websocket.WsClients.Load(fmt.Sprintf("%d", userID)); ok {
-		conn, ok := client.(*gorillaWS.Conn)
-		if ok {
-			conn.Close()
-		}
-		websocket.WsClients.Delete(fmt.Sprintf("%d", userID))
-	}
+	realtime.DisconnectUser(userID)
 }
 
 func writeRefreshTokenCookie(c *gin.Context, token string) {

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"gojo/config"
@@ -36,8 +39,21 @@ import (
 	userSvc "gojo/internal/user/service"
 )
 
+const (
+	httpShutdownTimeout       = 30 * time.Second
+	backgroundShutdownTimeout = 150 * time.Second
+)
+
+type shutdownResult struct {
+	component string
+	err       error
+}
+
 func main() {
 	fmt.Println("starting Gojo backend...")
+
+	shutdownSignalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 
 	config.InitConfig()
 	mysql.InitDB()
@@ -54,7 +70,7 @@ func main() {
 	sr := problemRepo.NewProblemSearchRepository()
 	subR := subRepo.NewSubmissionRepository()
 	syncManager := syncer.NewManager(pr, sr)
-	syncManager.Start(context.Background())
+	syncManager.Start(shutdownSignalCtx)
 
 	jr := judgeRepo.NewJudgeRepository(syncManager)
 	lr := leaderboardRepo.NewLeaderboardRepository()
@@ -62,7 +78,7 @@ func main() {
 
 	judgeService := judgeSvc.NewJudgeService(jr)
 
-	submissionService := subSvc.NewSubmissionService(subR)
+	submissionService := subSvc.NewSubmissionService(subR, pr)
 	userService := userSvc.NewUserService(ur, usr, submissionService)
 	problemService := problemSvc.NewProblemService(pr, sr, syncManager)
 	tagService := problemSvc.NewTagService(problemRepo.NewTagRepository(), syncManager)
@@ -109,10 +125,73 @@ func main() {
 		IdleTimeout:       secondsDuration(config.GlobalConfig.Server.IdleTimeoutSeconds),
 		MaxHeaderBytes:    config.GlobalConfig.Server.MaxHeaderBytes,
 	}
+
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.ListenAndServe()
+	}()
 	fmt.Printf("server listening on %s\n", addr)
 
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("server start failed: %v", err)
+	select {
+	case <-shutdownSignalCtx.Done():
+		log.Printf("shutdown signal received; stopping new requests and queue consumption")
+	case err := <-serverErr:
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return
+		}
+		log.Printf("server stopped unexpectedly: %v", err)
+		stopSignals()
+	}
+
+	httpShutdownCtx, cancelHTTP := context.WithTimeout(context.Background(), httpShutdownTimeout)
+	defer cancelHTTP()
+	backgroundShutdownCtx, cancelBackground := context.WithTimeout(context.Background(), backgroundShutdownTimeout)
+	defer cancelBackground()
+
+	// Stop queue consumption before waiting. Already claimed work keeps using
+	// its task context until the shutdown deadline is reached.
+	jw.StopAccepting()
+	cw.StopAccepting()
+
+	results := make(chan shutdownResult, 4)
+	go func() { results <- shutdownResult{"http server", shutdownHTTPServer(httpShutdownCtx, server)} }()
+	go func() { results <- shutdownResult{"judge workers", jw.Shutdown(backgroundShutdownCtx)} }()
+	go func() { results <- shutdownResult{"chat workers", cw.Shutdown(backgroundShutdownCtx)} }()
+	go func() { results <- shutdownResult{"sync workers", syncManager.Wait(backgroundShutdownCtx)} }()
+
+	for i := 0; i < cap(results); i++ {
+		result := <-results
+		if result.err != nil && !errors.Is(result.err, http.ErrServerClosed) {
+			log.Printf("graceful shutdown %s: %v", result.component, result.err)
+		}
+	}
+
+	closeInfrastructure()
+	log.Printf("Gojo backend stopped")
+}
+
+func shutdownHTTPServer(ctx context.Context, server *http.Server) error {
+	if err := server.Shutdown(ctx); err != nil {
+		// Shutdown waits for SSE and other in-flight requests. Once its deadline
+		// expires, close the remaining connections so the process can exit.
+		closeErr := server.Close()
+		if closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+			return errors.Join(err, closeErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func closeInfrastructure() {
+	if err := cache.Close(); err != nil {
+		log.Printf("close Redis: %v", err)
+	}
+	if err := mysql.Close(); err != nil {
+		log.Printf("close MySQL: %v", err)
+	}
+	if err := docker.Close(); err != nil {
+		log.Printf("close Docker client: %v", err)
 	}
 }
 

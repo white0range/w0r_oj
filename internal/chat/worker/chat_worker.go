@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gojo/config"
@@ -60,6 +61,13 @@ type ChatWorker struct {
 	agentBaseURL string
 	serviceUser  *userModel.User
 	serviceToken string
+
+	acceptCtx     context.Context
+	stopAccepting context.CancelFunc
+	taskCtx       context.Context
+	cancelTasks   context.CancelFunc
+	workers       sync.WaitGroup
+	stopOnce      sync.Once
 }
 
 func NewChatWorker(repo repository.ChatRepository) (*ChatWorker, error) {
@@ -203,10 +211,63 @@ const (
 )
 
 func (w *ChatWorker) StartTurnWorkerPool(workerCount int) {
+	w.acceptCtx, w.stopAccepting = context.WithCancel(context.Background())
+	w.taskCtx, w.cancelTasks = context.WithCancel(context.Background())
 	log.Printf("starting chat turn worker pool, workers=%d\n", workerCount)
-	go w.recoverDispatchableTurns(context.Background())
+
+	w.workers.Add(workerCount + 1)
+	go func() {
+		defer w.workers.Done()
+		w.recoverDispatchableTurns(w.acceptCtx)
+	}()
 	for i := 1; i <= workerCount; i++ {
-		go w.runTurnWorker(i)
+		workerID := i
+		go func() {
+			defer w.workers.Done()
+			w.runTurnWorker(w.acceptCtx, w.taskCtx, workerID)
+		}()
+	}
+}
+
+// StopAccepting prevents new Chat turns from being claimed while allowing a
+// turn that is already running to complete before the shutdown deadline.
+func (w *ChatWorker) StopAccepting() {
+	w.stopOnce.Do(func() {
+		if w.stopAccepting != nil {
+			w.stopAccepting()
+		}
+	})
+}
+
+func (w *ChatWorker) Shutdown(ctx context.Context) error {
+	w.StopAccepting()
+	if waitForChatWorkers(ctx, &w.workers) {
+		return nil
+	}
+
+	log.Printf("chat workers exceeded shutdown deadline; cancelling active chat turns")
+	if w.cancelTasks != nil {
+		w.cancelTasks()
+	}
+	forceCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if waitForChatWorkers(forceCtx, &w.workers) {
+		return ctx.Err()
+	}
+	return forceCtx.Err()
+}
+
+func waitForChatWorkers(ctx context.Context, group *sync.WaitGroup) bool {
+	done := make(chan struct{})
+	go func() {
+		group.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -350,28 +411,34 @@ func chatMessageIDs(messages []model.ChatMessage) []uint {
 	return ids
 }
 
-func (w *ChatWorker) runTurnWorker(id int) {
-	ctx := context.Background()
+func (w *ChatWorker) runTurnWorker(acceptCtx, taskCtx context.Context, id int) {
 	for {
-		payload, err := cache.Rdb.BRPopLPush(ctx, repository.ChatTurnQueueKey, repository.ChatTurnProcessingQueueKey, 0).Result()
+		payload, err := cache.Rdb.BRPopLPush(acceptCtx, repository.ChatTurnQueueKey, repository.ChatTurnProcessingQueueKey, 0).Result()
 		if err != nil {
+			if acceptCtx.Err() != nil {
+				return
+			}
 			log.Printf("chat turn worker %d pop task failed: %v\n", id, err)
 			continue
 		}
 
 		var task dto.ChatTurnQueueTask
 		if err := json.Unmarshal([]byte(payload), &task); err != nil {
-			_ = cache.Rdb.LRem(ctx, repository.ChatTurnProcessingQueueKey, 0, payload).Err()
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = cache.Rdb.LRem(cleanupCtx, repository.ChatTurnProcessingQueueKey, 0, payload).Err()
+			cancel()
 			log.Printf("chat turn worker %d unmarshal task failed: %v\n", id, err)
 			continue
 		}
 
 		log.Printf("chat turn worker %d processing turn_id=%d\n", id, task.TurnID)
-		if err := w.ProcessTurn(ctx, task.TurnID); err != nil {
+		if err := w.ProcessTurn(taskCtx, task.TurnID); err != nil {
 			log.Printf("chat turn worker %d process turn failed: %v\n", id, err)
 		}
-		_ = cache.Rdb.LRem(ctx, repository.ChatTurnProcessingQueueKey, 0, payload).Err()
-		_ = cache.Rdb.Del(ctx, repository.ChatTurnDispatchPrefix+fmt.Sprintf("%d", task.TurnID)).Err()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = cache.Rdb.LRem(cleanupCtx, repository.ChatTurnProcessingQueueKey, 0, payload).Err()
+		_ = cache.Rdb.Del(cleanupCtx, repository.ChatTurnDispatchPrefix+fmt.Sprintf("%d", task.TurnID)).Err()
+		cancel()
 	}
 }
 

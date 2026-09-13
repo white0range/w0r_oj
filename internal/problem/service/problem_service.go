@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"gojo/infrastructure/cache"
+	"gojo/internal/app/apperror"
 	"gojo/internal/problem/cacheutil"
 	"gojo/internal/problem/dto"
+	problemlimits "gojo/internal/problem/limits"
 	"gojo/internal/problem/model"
 	"gojo/internal/problem/repository"
 	"gojo/internal/syncer"
@@ -33,12 +35,15 @@ func NewProblemService(r repository.ProblemRepository, sr repository.ProblemSear
 func (s *ProblemService) CreateProblem(ctx context.Context, req dto.ProblemRequest) (*model.Problem, error) {
 	timeLimit := req.TimeLimit
 	if timeLimit == 0 {
-		timeLimit = 1000
+		timeLimit = problemlimits.DefaultTimeMS
 	}
 
 	memoryLimit := req.MemoryLimit
 	if memoryLimit == 0 {
-		memoryLimit = 256
+		memoryLimit = problemlimits.DefaultMemoryMB
+	}
+	if !problemlimits.ValidTimeMS(timeLimit) || !problemlimits.ValidMemoryMB(memoryLimit) {
+		return nil, apperror.ErrInvalidProblemLimits
 	}
 
 	problem := model.Problem{
@@ -205,10 +210,16 @@ func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, re
 	if req.Description != "" {
 		updateData["description"] = req.Description
 	}
-	if req.TimeLimit > 0 {
+	if req.TimeLimit != 0 {
+		if !problemlimits.ValidTimeMS(req.TimeLimit) {
+			return apperror.ErrInvalidProblemLimits
+		}
 		updateData["time_limit"] = req.TimeLimit
 	}
-	if req.MemoryLimit > 0 {
+	if req.MemoryLimit != 0 {
+		if !problemlimits.ValidMemoryMB(req.MemoryLimit) {
+			return apperror.ErrInvalidProblemLimits
+		}
 		updateData["memory_limit"] = req.MemoryLimit
 	}
 

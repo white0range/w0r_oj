@@ -4,14 +4,17 @@ services:
       context: ./agent
     container_name: gojo-agent
     restart: always
+    stop_grace_period: 165s
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      APP_ENV: ${APP_ENV:-dev}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-pro}
       GO_BACKEND_BASE_URL: ${GO_BACKEND_BASE_URL:-http://host.docker.internal:8080}
       AGENT_DEBUG: ${AGENT_DEBUG:-true}
+      AGENT_LLM_TIMEOUT_SECONDS: ${AGENT_LLM_TIMEOUT_SECONDS:-120}
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
@@ -45,7 +48,9 @@ services:
     networks:
       - oj-net
   elasticsearch:
-    image: elasticsearch:8.11.0
+    build:
+      context: ./infrastructure/elasticsearch
+    image: gojo-elasticsearch-ik:8.11.0
     container_name: oj-search
     restart: always
     environment:
@@ -71,7 +76,7 @@ services:
       - oj-net
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.2
     container_name: oj-qdrant
     restart: always
     expose:

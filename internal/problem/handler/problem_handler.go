@@ -31,11 +31,14 @@ func (h *ProblemHandler) CreateProblem(c *gin.Context) {
 
 	problem, err := h.svc.CreateProblem(c.Request.Context(), req)
 	if err != nil {
-		if errors.Is(err, apperror.ErrTagNotFound) {
+		switch {
+		case errors.Is(err, apperror.ErrTagNotFound):
 			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "tag not found")
-			return
+		case errors.Is(err, apperror.ErrInvalidProblemLimits):
+			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "time_limit must be 100-10000 ms and memory_limit must be 16-512 MB")
+		default:
+			response.Fail(c, http.StatusInternalServerError, ecode.InternalError)
 		}
-		response.Fail(c, http.StatusInternalServerError, ecode.InternalError)
 		return
 	}
 
@@ -92,11 +95,14 @@ func (h *ProblemHandler) UpdateProblem(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateProblem(c.Request.Context(), problemID, req); err != nil {
-		if errors.Is(err, apperror.ErrProblemNotFound) {
+		switch {
+		case errors.Is(err, apperror.ErrProblemNotFound):
 			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "problem not found")
-			return
+		case errors.Is(err, apperror.ErrInvalidProblemLimits):
+			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "time_limit must be 100-10000 ms and memory_limit must be 16-512 MB")
+		default:
+			response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "update problem failed")
 		}
-		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "update problem failed")
 		return
 	}
 

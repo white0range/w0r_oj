@@ -7,6 +7,7 @@ const (
 	StatusWrongAnswer         JudgeStatus = "WA"  // 答案错误
 	StatusTimeLimitExceeded   JudgeStatus = "TLE" // 运行超时
 	StatusMemoryLimitExceeded JudgeStatus = "MLE" // 内存超限
+	StatusOutputLimitExceeded JudgeStatus = "OLE" // 输出超限
 	StatusRuntimeError        JudgeStatus = "RE"  // 运行错误
 	StatusSystemError         JudgeStatus = "SE"  // 系统内部错误
 	StatusCompileError        JudgeStatus = "CE"  // 👈 新增：编译错误

@@ -227,6 +227,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createChatSession,
+  createChatStreamTicket,
   deleteChatSession,
   getErrorMessage,
   getChatMessages,
@@ -236,7 +237,6 @@ import {
   sendChatMessage,
   submitChatPlanFeedback,
 } from '../api'
-import { store } from '../store'
 
 const CHAT_SESSION_KEY = 'gojo:chatSessionId'
 const ACTIVE_TURN_STATUSES = ['pending', 'running']
@@ -600,28 +600,45 @@ async function reloadActiveSession() {
   await loadMessages(activeSessionId.value)
 }
 
-function connectTurnStream(turnId) {
+function startTurnStatusPolling(turnId) {
+  if (turnStatusPollTimer) {
+    window.clearInterval(turnStatusPollTimer)
+  }
+  turnStatusPollTimer = window.setInterval(() => {
+    void refreshTurnStatus(turnId)
+  }, 2000)
+}
+
+async function connectTurnStream(turnId) {
   if (!turnId || (turnStream && turnStreamTurnId === turnId)) {
     return
   }
 
-  const token = store.token
-  if (!token) {
+  closeTurnStream(false)
+  streamState.value = 'connecting'
+  streamMessage.value = '正在建立回复同步连接...'
+
+  let ticket = ''
+  try {
+    ticket = await createChatStreamTicket(turnId)
+  } catch {
     streamState.value = 'error'
-    streamMessage.value = '缺少登录凭证，无法建立实时连接。'
+    streamMessage.value = '实时连接建立失败，已切换为状态轮询。'
+    startTurnStatusPolling(turnId)
     return
   }
 
-  closeTurnStream(false)
+  if (!ticket) {
+    streamState.value = 'error'
+    streamMessage.value = '实时连接凭证无效，已切换为状态轮询。'
+    startTurnStatusPolling(turnId)
+    return
+  }
 
-  const source = new EventSource(`/api/chat/turns/${turnId}/stream?token=${encodeURIComponent(token)}`)
+  const source = new EventSource(`/api/chat/turns/${turnId}/stream?ticket=${encodeURIComponent(ticket)}`)
   turnStream = source
   turnStreamTurnId = turnId
-  streamState.value = 'connecting'
-  streamMessage.value = '正在建立回复同步连接...'
-  turnStatusPollTimer = window.setInterval(() => {
-    void refreshTurnStatus(turnId, source)
-  }, 2000)
+  startTurnStatusPolling(turnId)
 
   source.onopen = () => {
     if (turnStream !== source) {
@@ -639,7 +656,6 @@ function connectTurnStream(turnId) {
     try {
       const nextTurn = JSON.parse(event.data)
       currentTurn.value = nextTurn
-
       if (TERMINAL_TURN_STATUSES.includes(nextTurn.status || '')) {
         await refreshTurnStatus(turnId, source)
       }
@@ -660,18 +676,14 @@ function connectTurnStream(turnId) {
       return
     }
 
-    if (source.readyState === EventSource.CLOSED) {
-      closeTurnStream(false)
-      streamState.value = 'error'
-      streamMessage.value = '\u5b9e\u65f6\u8fde\u63a5\u5df2\u5173\u95ed\uff0c\u8bf7\u5237\u65b0\u5f53\u524d\u4f1a\u8bdd\u3002'
-      return
-    }
-
-    streamState.value = 'reconnecting'
-    streamMessage.value = '\u8fde\u63a5\u77ed\u6682\u4e2d\u65ad\uff0c\u6b63\u5728\u81ea\u52a8\u91cd\u8fde...'
+    // A ticket is one-time, so EventSource cannot reuse it for browser-level
+    // reconnects. Close it and retain the existing status-polling fallback.
+    closeTurnStream(false)
+    streamState.value = 'error'
+    streamMessage.value = '实时连接中断，已切换为状态轮询。'
+    startTurnStatusPolling(turnId)
   }
 }
-
 async function handleDeleteSession() {
   if (!activeSessionId.value) {
     return

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page">
     <section v-if="loading" class="loading-state">
       <strong>题目详情加载中</strong>
@@ -62,9 +62,6 @@
               <label for="language">编程语言</label>
               <select id="language" v-model="language" class="select">
                 <option value="go">Go</option>
-                <option value="python">Python</option>
-                <option value="java">Java</option>
-                <option value="cpp">C++</option>
               </select>
             </div>
 
@@ -114,7 +111,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getErrorMessage, getProblemDetail, getSubmission, submitCode } from '../api'
+import { createEventsTicket, getErrorMessage, getProblemDetail, getSubmission, submitCode } from '../api'
 import { store } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
 
@@ -137,9 +134,6 @@ const POLL_INTERVAL_MS = 2000
 
 const placeholderByLanguage = {
   go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello Gojo")\n}',
-  python: 'print("Hello Gojo")',
-  java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello Gojo");\n    }\n}',
-  cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello Gojo" << endl;\n    return 0;\n}',
 }
 
 const renderedDescription = computed(() => {
@@ -218,9 +212,8 @@ async function refreshSubmission() {
   }
 }
 
-function openSocket(submissionId) {
-  const token = store.token
-  if (!token) {
+async function openSocket(submissionId) {
+  if (!store.isLoggedIn) {
     startPolling()
     return
   }
@@ -229,11 +222,20 @@ function openSocket(submissionId) {
   stopSocketFallbackTimer()
   suppressSocketFallback = false
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  socket = new WebSocket(`${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
+  try {
+    const ticket = await createEventsTicket()
+    if (!ticket || !isSubmissionPending()) {
+      startPolling()
+      return
+    }
+    socket = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`)
+  } catch {
+    startPolling()
+    return
+  }
 
   socketFallbackTimer = setTimeout(() => {
-    if (socket && socket.readyState !== WebSocket.OPEN && isSubmissionPending()) {
+    if (socket && socket.readyState !== EventSource.OPEN && isSubmissionPending()) {
       startPolling()
     }
   }, SOCKET_FALLBACK_DELAY_MS)
@@ -243,16 +245,21 @@ function openSocket(submissionId) {
     stopPolling()
   }
 
-  socket.onmessage = (event) => {
+  socket.addEventListener('judge_result', (event) => {
     try {
       const payload = JSON.parse(event.data)
-      if (Number(payload.submission_id) === submissionId) {
-        refreshSubmission()
+      if (Number(payload.submission_id) === Number(submissionId)) {
+        void refreshSubmission()
       }
     } catch {}
-  }
+  })
 
   socket.onerror = () => {
+    if (socket) {
+      suppressSocketFallback = true
+      socket.close()
+      socket = null
+    }
     if (isSubmissionPending()) {
       startPolling()
     }
@@ -263,13 +270,11 @@ function openSocket(submissionId) {
     const shouldFallback = !suppressSocketFallback && isSubmissionPending()
     suppressSocketFallback = false
     socket = null
-
     if (shouldFallback) {
       startPolling()
     }
   }
 }
-
 async function handleSubmit() {
   submitting.value = true
   submitState.value = null

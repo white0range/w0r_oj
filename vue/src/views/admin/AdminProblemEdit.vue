@@ -33,11 +33,11 @@
         <div class="form-grid">
           <div class="field">
             <label for="time-limit">时间限制（ms）</label>
-            <input id="time-limit" v-model.number="form.time_limit" class="input" type="number" min="1" />
+            <input id="time-limit" v-model.number="form.time_limit" class="input" type="number" min="100" max="10000" />
           </div>
           <div class="field">
             <label for="memory-limit">内存限制（MB）</label>
-            <input id="memory-limit" v-model.number="form.memory_limit" class="input" type="number" min="1" />
+            <input id="memory-limit" v-model.number="form.memory_limit" class="input" type="number" min="16" max="512" />
           </div>
         </div>
         <div class="field">

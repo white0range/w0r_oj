@@ -20,7 +20,7 @@ Gojo OJ 是一个面向算法学习场景的在线判题与 AI 学习助手平�
 ```mermaid
 flowchart LR
     U["用户浏览器"] --> V["Vue 3 / Vite"]
-    V -->|"HTTP / SSE / WebSocket"| G["Go API / Gin"]
+    V -->|"HTTP / SSE"| G["Go API / Gin"]
 
     G --> M[("MySQL<br/>业务事实数据")]
     G --> R[("Redis<br/>缓存、队列、ZSet")]
@@ -31,7 +31,7 @@ flowchart LR
     JW --> D
     D --> C["编译容器 / 运行沙箱"]
     JW --> M
-    JW -->|"WebSocket 推送"| V
+    JW -->|"SSE 推送"| V
 
     R --> CW["Chat Worker"]
     CW -->|"JWT + Service Token"| F["FastAPI / LangChain Agent"]
@@ -50,7 +50,7 @@ flowchart LR
 
 | 组件 | 主要职责 |
 | --- | --- |
-| Vue 3 | 用户端与管理后台，维护双 Token，接收 SSE 回合状态和 WebSocket 判题通知 |
+| Vue 3 | 用户端与管理后台，维护双 Token，通过 SSE 接收回合状态和判题通知 |
 | Go / Gin | 业务 API、认证授权、题目与提交管理、判题调度、Chat 调度、内部 Agent 工具接口 |
 | MySQL / GORM | 用户、题目、测试用例、提交、会话、消息、回合和反馈等事实数据 |
 | Redis | 旁路缓存、提交限流、判题队列、Chat 队列、同步队列和排行榜 ZSet |
@@ -72,7 +72,7 @@ flowchart LR
 5. 编译成功后，为本次提交创建关闭网络的运行沙箱；多个测试用例通过 Docker Exec 依次执行，避免重复创建容器。
 6. `ContainerExecAttach` 提供本次 Exec 的实时输出流，`stdcopy.StdCopy` 将 Docker 复用流拆分为 `stdout` 和 `stderr`；Runner 输出 JSON 形式的退出码、信号、耗时、内存与程序输出。
 7. 判题服务依次判断系统错误、超时、内存超限、运行错误和输出差异，遇到首个失败用例后停止。
-8. 最终状态写回 MySQL，并通过 WebSocket 向在线用户推送 `JUDGE_RESULT`。
+8. 最终状态写回 MySQL，并通过 SSE 向在线用户推送 `judge_result`。
 
 | 状态 | 含义 |
 | --- | --- |
@@ -108,7 +108,7 @@ MySQL 是题目与用户积分的事实数据源。题目新增、修改、删�
 
 Worker 通过 Lua 脚本原子地将任务从 Pending 移到 Processing 并设置租约。成功后 ACK；失败后按 `1m、5m、30m、2h、12h` 退避，最多重试 8 次。后台协程定期提升到期重试、恢复租约超时任务，并每 30 分钟从 MySQL 发起全量校准。
 
-- **Elasticsearch**：同步 `problems` 索引。查询对 `title^3` 和 `description` 执行 `multi_match`，通过 `tags.keyword` 精确筛选。
+- **Elasticsearch**：同步 `problems_current` Alias 指向的 IK 索引。查询对 `title^3` 和 `description` 执行 `multi_match`，通过 `tags` 精确筛选。
 - **Qdrant RAG**：Sync Worker 调用 FastAPI 的 `/rag/problems/sync` 或 `/rag/problems/delete`；FastAPI 从 Go API 读取题目，调用 DashScope 生成向量后写入 Qdrant。
 - **排行榜**：Redis ZSet `leaderboard:infrastructure` 以用户 ID 为 member，以 `solved_count * 10` 为 score。全量重建先写临时 Key，再通过 `RENAME` 原子替换。
 
@@ -265,7 +265,7 @@ elasticsearch:
 chat:
   worker_count: 3
   agent_base_url: "http://localhost:8000"
-  agent_timeout_seconds: 60
+  agent_timeout_seconds: 120
   agent_service_token: "replace-with-another-long-random-secret"
 ```
 
@@ -285,6 +285,12 @@ AGENT_SERVICE_TOKEN=replace-with-another-long-random-secret
 
 该值必须与 `chat.agent_service_token` 完全相同，否则 Chat 和 RAG 同步会返回 `401`。
 
+### 生产环境密钥要求
+
+上线时设置 `APP_ENV=prod`（或 `production`）。仓库提供可提交、无密钥的 `config/config.production.example.yaml`：Docker 生产镜像会将它作为 `config.production.yaml` 使用，并由 `GOJO_*` 环境变量注入密钥。若直接运行 Go 程序，请先复制该模板为本机私有的 `config/config.production.yaml`。Go 后端会在连接数据库前拒绝启动，除非下列三个值均为至少 32 个字符的随机值：`jwt.secret`、`chat.agent_service_token`、`redis.password`。Agent 也会拒绝使用空、过短或示例形式的 `AGENT_SERVICE_TOKEN` 启动。
+
+`chat.agent_service_token` 与 `.env` 中的 `AGENT_SERVICE_TOKEN` 必须完全一致；JWT Secret 和 Redis 密码必须分别独立生成，不能复用。可用密码管理器或 `openssl rand -hex 32` 生成随机值，且不要提交本机的 `config.production.yaml` 或 `.env`。
+
 ```bash
 docker compose up -d --build
 docker compose ps
@@ -299,18 +305,15 @@ docker pull golang:alpine
 | Kibana | `http://localhost:5601` |
 | Qdrant HTTP | `http://localhost:6333` |
 
-### 4. 准备 Agent 服务账号
+### 4. 初始化管理员账号
 
-Chat Worker 初始化时要求数据库至少存在一个 `role=1`、`status='active'` 且 `token_version > 0` 的用户。全新数据库首次启动会先完成 AutoMigrate，然后因缺少该账号退出。表创建后可插入一个不可登录的内部服务账号：
+Chat Worker 初始化时要求数据库至少存在一个 `role=1`、`status='active'` 且 `token_version > 0` 的用户。生产 Compose 提供一次性 `bootstrap-admin` 工具：在私有环境文件中填写 `BOOTSTRAP_ADMIN_USERNAME` 和 `BOOTSTRAP_ADMIN_PASSWORD` 后执行：
 
-```sql
-INSERT INTO users
-  (created_at, updated_at, username, password, solved_count, role, status, token_version)
-VALUES
-  (NOW(), NOW(), 'agent-service', 'login-disabled', 0, 1, 'active', 1);
+```bash
+docker compose --env-file .env.local-production -f docker-compose.prod.yml --profile tools run --rm bootstrap-admin
 ```
 
-其 `password` 不是合法 bcrypt Hash，不能通过登录接口认证，只用于内部签发 JWT。实际管理员可以注册普通账号后，再由数据库管理员将其 `role` 更新为 `1`。
+用户名必须为 3-32 个字符，密码必须为 12-72 字节。工具不会覆盖或提升同名普通用户；重复执行时，若该账号已经是启用的管理员，会安全退出。初始化成功后应从环境文件清空 `BOOTSTRAP_ADMIN_PASSWORD`。
 
 ### 5. 启动 Go 后端
 
@@ -329,7 +332,7 @@ npm install
 npm run dev
 ```
 
-Vite 默认监听 `http://localhost:3000`，将 `/api` 和 WebSocket 请求代理到 `http://localhost:8080`。
+Vite 默认监听 `http://localhost:3000`，将 `/api` 请求（包括 SSE）代理到 `http://localhost:8080`。
 
 ### 7. 健康检查
 
@@ -389,13 +392,13 @@ curl http://localhost:6333/collections
 | 提交 | `GET /api/submissions/:id` | 登录 | 查询自己的提交 |
 | 提交 | `GET /api/my-submissions` | 登录 | 个人提交记录 |
 | 排行榜 | `GET /api/leaderboard` | 公开/可选登录 | Top 50 与个人排名 |
-| 实时通知 | `GET /api/ws` | 登录 | 判题结果 WebSocket |
+| 实时通知 | `POST /api/events/ticket` | 登录 | 获取 60 秒有效、一次性的判题通知 SSE Ticket |`r`n| 实时通知 | `GET /api/events?ticket=...` | Ticket | SSE 推送判题结果 |
 | Chat | `POST /api/chat/sessions` | 登录 | 创建会话 |
 | Chat | `GET /api/chat/sessions` | 登录 | 会话列表 |
 | Chat | `GET /api/chat/sessions/:id/messages` | 登录 | 会话消息 |
 | Chat | `POST /api/chat/sessions/:id/messages` | 登录 | 发送消息并创建回合 |
 | Chat | `GET /api/chat/turns/:id` | 登录 | 查询回合状态 |
-| Chat | `GET /api/chat/turns/:id/stream` | 登录 | SSE 监听回合 |
+| Chat | `POST /api/chat/turns/:id/stream-ticket` | 登录 | 获取绑定该回合的一次性 SSE Ticket |`r`n| Chat | `GET /api/chat/turns/:id/stream?ticket=...` | Ticket | SSE 监听回合 |
 | Chat | `POST /api/chat/turns/:id/feedback` | 登录 | 提交 ChatPlanFeedback |
 | 管理后台 | `/api/admin/*` | 管理员 | 用户、题目、标签与测试用例管理 |
 | Agent 工具 | `/api/admin/agent/*` | 管理员 + Service Token | FastAPI 内部工具调用 |
@@ -473,7 +476,7 @@ docker compose up -d --build agent
 
 ### 中文搜索召回较弱
 
-当前 ES 使用动态 Mapping，未内置 IK 中文分词器。默认 Standard Analyzer 对中文长文本切词能力有限。生产环境建议安装与 ES 版本一致的 IK 插件，为 `title` 和 `description` 显式配置 `ik_max_word` 索引分词与 `ik_smart` 查询分词，并在 Mapping 变更后重建索引。
+ES 使用与 `elasticsearch:8.11.0` 匹配的 IK 插件。`title` 和 `description` 显式使用 `ik_max_word` 建立索引、`ik_smart` 查询；应用通过 `problems_current` Alias 读写版本化的 `problems_ik_v1` 索引。首次升级会从 MySQL 全量重新同步题目到新索引；确认搜索正常后，旧的动态 Mapping `problems` 索引可手动删除。
 
 ### 同步队列积压
 

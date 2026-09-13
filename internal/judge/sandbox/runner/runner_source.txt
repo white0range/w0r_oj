@@ -1,8 +1,9 @@
-﻿package main
+package main
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,15 +16,66 @@ import (
 )
 
 type runResult struct {
-	ExitCode     int    `json:"exit_code"`
-	Signal       int    `json:"signal"`
-	WallTimeMS   int64  `json:"wall_time_ms"`
-	CPUTimeMS    int64  `json:"cpu_time_ms"`
-	MaxRSSKB     int64  `json:"max_rss_kb"`
-	WallTimedOut bool   `json:"wall_timed_out"`
-	Stdout       string `json:"stdout"`
-	Stderr       string `json:"stderr"`
-	Error        string `json:"error,omitempty"`
+	ExitCode       int    `json:"exit_code"`
+	Signal         int    `json:"signal"`
+	WallTimeMS     int64  `json:"wall_time_ms"`
+	CPUTimeMS      int64  `json:"cpu_time_ms"`
+	MaxRSSKB       int64  `json:"max_rss_kb"`
+	WallTimedOut   bool   `json:"wall_timed_out"`
+	OutputExceeded bool   `json:"output_exceeded"`
+	Stdout         string `json:"stdout"`
+	Stderr         string `json:"stderr"`
+	Error          string `json:"error,omitempty"`
+}
+
+const maxProgramOutputBytes int64 = 1 << 20
+
+var errOutputLimitExceeded = errors.New("program output limit exceeded")
+
+// outputCollector stores at most one combined stdout/stderr budget and tells
+// the parent to stop the submitted program immediately when it is exhausted.
+type outputCollector struct {
+	mu        sync.Mutex
+	remaining int64
+	exceeded  bool
+	limitCh   chan struct{}
+}
+
+type limitedOutputWriter struct {
+	collector *outputCollector
+	buffer    *bytes.Buffer
+}
+
+func newOutputCollector(limit int64) *outputCollector {
+	return &outputCollector{remaining: limit, limitCh: make(chan struct{})}
+}
+
+func (w limitedOutputWriter) Write(data []byte) (int, error) {
+	w.collector.mu.Lock()
+	defer w.collector.mu.Unlock()
+
+	allowed := len(data)
+	if int64(allowed) > w.collector.remaining {
+		allowed = int(w.collector.remaining)
+	}
+	if allowed > 0 {
+		_, _ = w.buffer.Write(data[:allowed])
+		w.collector.remaining -= int64(allowed)
+	}
+	if allowed == len(data) {
+		return len(data), nil
+	}
+	if !w.collector.exceeded {
+		w.collector.exceeded = true
+		close(w.collector.limitCh)
+	}
+	return len(data), errOutputLimitExceeded
+}
+
+func (c *outputCollector) Exceeded() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.exceeded
 }
 
 func main() {
@@ -80,15 +132,16 @@ func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLi
 
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
+	outputCollector := newOutputCollector(maxProgramOutputBytes)
 	var copyWG sync.WaitGroup
 	copyWG.Add(2)
 	go func() {
 		defer copyWG.Done()
-		_, _ = io.Copy(&stdoutBuf, stdoutPipe)
+		_, _ = io.Copy(limitedOutputWriter{collector: outputCollector, buffer: &stdoutBuf}, stdoutPipe)
 	}()
 	go func() {
 		defer copyWG.Done()
-		_, _ = io.Copy(&stderrBuf, stderrPipe)
+		_, _ = io.Copy(limitedOutputWriter{collector: outputCollector, buffer: &stderrBuf}, stderrPipe)
 	}()
 
 	type waitOutcome struct {
@@ -115,6 +168,14 @@ func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLi
 		result.WallTimedOut = true
 		_ = killProcessGroup(cmd.Process.Pid)
 		outcome = <-waitCh
+	case <-outputCollector.limitCh:
+		result.OutputExceeded = true
+		_ = killProcessGroup(cmd.Process.Pid)
+		outcome = <-waitCh
+	}
+	copyWG.Wait()
+	if outputCollector.Exceeded() {
+		result.OutputExceeded = true
 	}
 
 	result.WallTimeMS = time.Since(startedAt).Milliseconds()
@@ -124,8 +185,10 @@ func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLi
 
 	result.CPUTimeMS = timeValToMS(outcome.rusage.Utime) + timeValToMS(outcome.rusage.Stime)
 	result.MaxRSSKB = outcome.rusage.Maxrss
-	result.Stdout = stdoutBuf.String()
-	result.Stderr = stderrBuf.String()
+	if !result.OutputExceeded {
+		result.Stdout = stdoutBuf.String()
+		result.Stderr = stderrBuf.String()
+	}
 
 	if outcome.status.Exited() {
 		result.ExitCode = outcome.status.ExitStatus()
@@ -134,7 +197,6 @@ func execute(binPath string, inputData []byte, cpuLimitMS, wallLimitMS, memoryLi
 		result.Signal = int(outcome.status.Signal())
 	}
 
-	copyWG.Wait()
 	return result
 }
 
@@ -175,4 +237,3 @@ func writeResult(result runResult) {
 		os.Exit(1)
 	}
 }
-

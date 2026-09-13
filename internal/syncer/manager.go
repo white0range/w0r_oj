@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"gojo/internal/problem/repository"
@@ -31,6 +32,7 @@ type Manager struct {
 	queue       *queue
 	problemRepo repository.ProblemRepository
 	handlers    map[Target]handler
+	workers     sync.WaitGroup
 }
 
 type handler interface {
@@ -54,18 +56,48 @@ func (m *Manager) Start(ctx context.Context) {
 		log.Printf("recover expired sync tasks at startup failed: %v", err)
 	}
 
+	m.workers.Add(workerCount + 3)
 	for i := 0; i < workerCount; i++ {
-		go m.runWorker(ctx, i+1)
+		workerID := i + 1
+		go func() {
+			defer m.workers.Done()
+			m.runWorker(ctx, workerID)
+		}()
 	}
-	go m.runRetryScheduler(ctx)
-	go m.runRecoveryWorker(ctx)
-	go m.runReconciler(ctx)
+	go func() {
+		defer m.workers.Done()
+		m.runRetryScheduler(ctx)
+	}()
+	go func() {
+		defer m.workers.Done()
+		m.runRecoveryWorker(ctx)
+	}()
+	go func() {
+		defer m.workers.Done()
+		m.runReconciler(ctx)
+	}()
 
 	if err := m.enqueueLeaderboardReconcile(ctx); err != nil {
 		log.Printf("enqueue initial leaderboard reconciliation failed: %v", err)
 	}
 	if err := m.enqueueAllProblems(ctx); err != nil {
 		log.Printf("enqueue initial problem reconciliation failed: %v", err)
+	}
+}
+
+// Wait blocks until all sync background loops have stopped or the deadline
+// expires. Their shared context is cancelled by the main shutdown signal.
+func (m *Manager) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		m.workers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

@@ -32,3 +32,11 @@ func InitRedis() {
 
 	fmt.Println("🎉 Redis 引擎连接成功！大坝已建立！")
 }
+
+// Close releases Redis connections during a graceful shutdown.
+func Close() error {
+	if Rdb == nil {
+		return nil
+	}
+	return Rdb.Close()
+}

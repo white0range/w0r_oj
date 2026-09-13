@@ -33,3 +33,11 @@ func InitDockerClient() error {
 	DockerClient = cli
 	return nil
 }
+
+// Close releases the Docker API client during shutdown.
+func Close() error {
+	if DockerClient == nil {
+		return nil
+	}
+	return DockerClient.Close()
+}
