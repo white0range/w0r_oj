@@ -38,22 +38,22 @@ type ServerConfig struct {
 }
 
 type SQLConfig struct {
-	Dsn                    string
-	MaxOpenConns           int `mapstructure:"max_open_conns"`
-	MaxIdleConns           int `mapstructure:"max_idle_conns"`
-	ConnMaxLifetimeSeconds int `mapstructure:"conn_max_lifetime_seconds"`
+	Dsn                    string `mapstructure:"dsn"`
+	MaxOpenConns           int    `mapstructure:"max_open_conns"`
+	MaxIdleConns           int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeSeconds int    `mapstructure:"conn_max_lifetime_seconds"`
 }
 
 type RedisConfig struct {
-	Addr     string
-	Password string
-	DB       int
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 type JWTConfig struct {
-	Secret           string
-	AccessTTLMinutes int `mapstructure:"access_ttl_minutes"`
-	RefreshTTLHours  int `mapstructure:"refresh_ttl_hours"`
+	Secret           string `mapstructure:"secret"`
+	AccessTTLMinutes int    `mapstructure:"access_ttl_minutes"`
+	RefreshTTLHours  int    `mapstructure:"refresh_ttl_hours"`
 }
 
 type AIConfig struct {
@@ -148,6 +148,9 @@ func InitConfig() {
 	viper.SetEnvPrefix("GOJO")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	if err := bindEnvironment(); err != nil {
+		log.Fatalf("bind environment variables failed: %v", err)
+	}
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("read config file failed: %v", err)
@@ -162,6 +165,26 @@ func InitConfig() {
 	}
 
 	fmt.Println("system config loaded successfully")
+}
+
+// bindEnvironment registers keys that are supplied only through environment
+// variables in production. AutomaticEnv alone does not make such keys visible
+// to Viper's Unmarshal operation.
+func bindEnvironment() error {
+	for _, key := range []string{
+		"sql.dsn",
+		"redis.password",
+		"jwt.secret",
+		"ai.api_key",
+		"ai.base_url",
+		"ai.model",
+		"chat.agent_service_token",
+	} {
+		if err := viper.BindEnv(key); err != nil {
+			return fmt.Errorf("bind %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 const minProductionSecretLength = 32

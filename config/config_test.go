@@ -1,6 +1,33 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/spf13/viper"
+)
+
+func TestBoundEnvironmentIsUnmarshaled(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	const secret = "0123456789abcdef0123456789abcdef"
+	t.Setenv("GOJO_JWT_SECRET", secret)
+	viper.SetEnvPrefix("GOJO")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+	if err := bindEnvironment(); err != nil {
+		t.Fatalf("bindEnvironment() error = %v", err)
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if cfg.JWT.Secret != secret {
+		t.Fatalf("JWT secret was not loaded from GOJO_JWT_SECRET")
+	}
+}
 
 func TestValidateStartupConfig(t *testing.T) {
 	validSecret := "0123456789abcdef0123456789abcdef"
