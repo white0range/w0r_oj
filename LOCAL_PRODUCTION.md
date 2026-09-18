@@ -1,6 +1,6 @@
-# 本机生产模式验证
+# 生产 Compose 与 4GB 配置验证
 
-这套文件模拟服务器上的生产运行方式：Vue 会被构建成静态文件，Nginx 是唯一对本机开放的入口，Go、Agent、MySQL、Redis、Elasticsearch 和 Qdrant 只在 Docker 私有网络中通信。Docker 镜像使用仓库内不含密钥的 `config/config.production.example.yaml`，不需要也不应复制真实的 `config.production.yaml` 到服务器。
+这套文件既可用于本机模拟，也可用于小流量的 Linux 单机部署：Vue 会被构建成静态文件，Compose 网关是唯一绑定宿主机端口的容器，Go、Agent、MySQL、Redis、Elasticsearch 和 Qdrant 只在 Docker 私有网络中通信。Docker 镜像使用仓库内不含密钥的 `config/config.production.example.yaml`，不需要也不应复制真实的 `config.production.yaml` 到服务器。
 
 ## 第一次运行
 
@@ -48,6 +48,35 @@ docker compose --env-file .env.local-production -f docker-compose.prod.yml --pro
 ```
 
 不要把 `down -v` 当作普通停机命令；它会删除本地数据库等 Docker Volume。
+
+## 4GB 服务器配置
+
+`docker-compose.4g.yml` 是叠加在生产 Compose 上的低内存配置，不可单独启动。它把 Judge 和 Chat 并发都限制为 1，收紧数据库连接池与各服务内存上限，同时保留 Elasticsearch、Qdrant、Agent 和完整判题功能。
+
+```bash
+docker compose --env-file .env.local-production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.4g.yml \
+  up -d --build
+```
+
+验证最终配置和运行状态：
+
+```bash
+docker compose --env-file .env.local-production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.4g.yml \
+  config --quiet
+
+docker compose --env-file .env.local-production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.4g.yml \
+  ps
+
+docker stats --no-stream
+```
+
+4GB 主机还应在宿主机上配置 2GB Swap，并把 `vm.swappiness` 设置为较低值（例如 10）。Swap 是瞬时峰值的保险，不是容器内存配额；创建前先用 `swapon --show` 检查服务器是否已经存在 Swap，避免重复配置。
 
 ## Judge 的 Docker Desktop 说明
 

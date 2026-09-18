@@ -96,6 +96,16 @@ type ChatConfig struct {
 var GlobalConfig Config
 
 func InitConfig() {
+	initConfig(ValidateStartupConfig)
+}
+
+// InitJudgeWorkerConfig loads the same environment-specific configuration but
+// validates only secrets required by the isolated judge worker.
+func InitJudgeWorkerConfig() {
+	initConfig(ValidateJudgeWorkerStartupConfig)
+}
+
+func initConfig(validate func(Config, string) error) {
 	env := os.Getenv("APP_ENV")
 	if env == "" {
 		env = "dev"
@@ -160,24 +170,28 @@ func InitConfig() {
 		log.Fatalf("unmarshal config failed: %v", err)
 	}
 
-	if err := ValidateStartupConfig(GlobalConfig, env); err != nil {
+	if err := validate(GlobalConfig, env); err != nil {
 		log.Fatalf("invalid production security configuration: %v", err)
 	}
 
 	fmt.Println("system config loaded successfully")
 }
 
-// bindEnvironment registers keys that are supplied only through environment
-// variables in production. AutomaticEnv alone does not make such keys visible
-// to Viper's Unmarshal operation.
+// bindEnvironment registers production secrets and deployment tunables that
+// must remain visible to Viper's Unmarshal operation when Compose supplies
+// them through environment variables.
 func bindEnvironment() error {
 	for _, key := range []string{
 		"sql.dsn",
+		"sql.max_open_conns",
+		"sql.max_idle_conns",
 		"redis.password",
 		"jwt.secret",
 		"ai.api_key",
 		"ai.base_url",
 		"ai.model",
+		"judge.worker_count",
+		"chat.worker_count",
 		"chat.agent_service_token",
 	} {
 		if err := viper.BindEnv(key); err != nil {
@@ -208,6 +222,18 @@ func ValidateStartupConfig(cfg Config, selectedEnv string) error {
 		if isUnsafeProductionSecret(check.value) {
 			return fmt.Errorf("%s must be a random secret of at least %d characters and must not use a sample value", check.name, minProductionSecretLength)
 		}
+	}
+	return nil
+}
+
+// ValidateJudgeWorkerStartupConfig avoids injecting API-only JWT and Agent
+// secrets into the high-privilege process that owns the Docker Socket.
+func ValidateJudgeWorkerStartupConfig(cfg Config, selectedEnv string) error {
+	if !isProductionEnv(selectedEnv) && !isProductionEnv(cfg.App.Env) {
+		return nil
+	}
+	if isUnsafeProductionSecret(cfg.Redis.Password) {
+		return fmt.Errorf("redis.password must be a random secret of at least %d characters and must not use a sample value", minProductionSecretLength)
 	}
 	return nil
 }

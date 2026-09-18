@@ -1,0 +1,93 @@
+# Low-memory production overrides for a 4 GiB Linux server.
+#
+# Use together with docker-compose.prod.yml; this file is intentionally not a
+# standalone Compose project:
+#   docker compose --env-file .env.local-production \
+#     -f docker-compose.prod.yml -f docker-compose.4g.yml up -d --build
+
+x-gojo-4g-logging: &gojo-4g-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  gateway:
+    mem_limit: 64m
+    logging: *gojo-4g-logging
+
+  api:
+    mem_limit: 224m
+    environment:
+      # One chat turn at a time is enough for a small private beta.
+      GOJO_CHAT_WORKER_COUNT: "1"
+      GOJO_SQL_MAX_OPEN_CONNS: "8"
+      GOJO_SQL_MAX_IDLE_CONNS: "4"
+      # Ask Go to collect before reaching the container's hard limit.
+      GOMEMLIMIT: 160MiB
+    logging: *gojo-4g-logging
+
+  judge-worker:
+    mem_limit: 128m
+    environment:
+      # Compile containers have their own 512 MiB hard limit. Keeping one
+      # worker prevents three compilers from consuming 1.5 GiB concurrently.
+      GOJO_JUDGE_WORKER_COUNT: "1"
+      GOJO_SQL_MAX_OPEN_CONNS: "4"
+      GOJO_SQL_MAX_IDLE_CONNS: "2"
+      GOMEMLIMIT: 96MiB
+    logging: *gojo-4g-logging
+
+  agent:
+    mem_limit: 320m
+    environment:
+      # Limit glibc arena proliferation in the long-running Python process.
+      MALLOC_ARENA_MAX: "2"
+    logging: *gojo-4g-logging
+
+  mysql:
+    mem_limit: 480m
+    command:
+      - --innodb-buffer-pool-size=192M
+      - --innodb-log-buffer-size=8M
+      - --max-connections=40
+      - --performance-schema=OFF
+      - --table-open-cache=400
+      - --table-definition-cache=400
+      - --temptable-max-ram=32M
+      - --tmp-table-size=16M
+      - --max-heap-table-size=16M
+    logging: *gojo-4g-logging
+
+  redis:
+    mem_limit: 96m
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+      # Never evict queue jobs or sessions silently; reject writes if this
+      # small-beta budget is genuinely exhausted.
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - noeviction
+    logging: *gojo-4g-logging
+
+  elasticsearch:
+    # A 512 MiB JVM heap still needs native/thread memory and Lucene cache.
+    # 1.3 GiB leaves practical headroom without reserving this memory upfront.
+    mem_limit: 1300m
+    environment:
+      # The measured heap is already too active to reduce safely below 512 MiB.
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      xpack.ml.enabled: "false"
+      ingest.geoip.downloader.enabled: "false"
+    logging: *gojo-4g-logging
+
+  qdrant:
+    mem_limit: 350m
+    logging: *gojo-4g-logging

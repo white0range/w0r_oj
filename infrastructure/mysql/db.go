@@ -18,6 +18,17 @@ import (
 var DB *gorm.DB
 
 func InitDB() {
+	initDB(true)
+}
+
+// InitDBWithoutMigration is used by background workers. Schema ownership stays
+// with the API startup path so multiple processes do not run AutoMigrate at the
+// same time.
+func InitDBWithoutMigration() {
+	initDB(false)
+}
+
+func initDB(runMigrations bool) {
 	dsn := config.GlobalConfig.SQL.Dsn
 
 	var err error
@@ -36,6 +47,10 @@ func InitDB() {
 	sqlDB.SetMaxOpenConns(config.GlobalConfig.SQL.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(config.GlobalConfig.SQL.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(time.Duration(config.GlobalConfig.SQL.ConnMaxLifetimeSeconds) * time.Second)
+
+	if !runMigrations {
+		return
+	}
 
 	err = DB.AutoMigrate(
 		&userModel.User{},

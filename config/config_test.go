@@ -29,6 +29,33 @@ func TestBoundEnvironmentIsUnmarshaled(t *testing.T) {
 	}
 }
 
+func TestBoundDeploymentTuningIsUnmarshaled(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	t.Setenv("GOJO_SQL_MAX_OPEN_CONNS", "8")
+	t.Setenv("GOJO_SQL_MAX_IDLE_CONNS", "4")
+	t.Setenv("GOJO_JUDGE_WORKER_COUNT", "1")
+	t.Setenv("GOJO_CHAT_WORKER_COUNT", "1")
+	viper.SetEnvPrefix("GOJO")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+	if err := bindEnvironment(); err != nil {
+		t.Fatalf("bindEnvironment() error = %v", err)
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if cfg.SQL.MaxOpenConns != 8 || cfg.SQL.MaxIdleConns != 4 {
+		t.Fatalf("SQL pool overrides = (%d, %d), want (8, 4)", cfg.SQL.MaxOpenConns, cfg.SQL.MaxIdleConns)
+	}
+	if cfg.Judge.WorkerCount != 1 || cfg.Chat.WorkerCount != 1 {
+		t.Fatalf("worker overrides = (%d, %d), want (1, 1)", cfg.Judge.WorkerCount, cfg.Chat.WorkerCount)
+	}
+}
+
 func TestValidateStartupConfig(t *testing.T) {
 	validSecret := "0123456789abcdef0123456789abcdef"
 	base := Config{
@@ -67,5 +94,21 @@ func TestValidateStartupConfig(t *testing.T) {
 	dev.Redis.Password = ""
 	if err := ValidateStartupConfig(dev, "dev"); err != nil {
 		t.Fatalf("development config should remain usable: %v", err)
+	}
+}
+
+func TestValidateJudgeWorkerStartupConfig(t *testing.T) {
+	validSecret := "0123456789abcdef0123456789abcdef"
+	cfg := Config{
+		App:   AppInfoConfig{Env: "production"},
+		Redis: RedisConfig{Password: validSecret},
+	}
+
+	if err := ValidateJudgeWorkerStartupConfig(cfg, "production"); err != nil {
+		t.Fatalf("valid judge worker config rejected: %v", err)
+	}
+	cfg.Redis.Password = "too-short"
+	if err := ValidateJudgeWorkerStartupConfig(cfg, "production"); err == nil {
+		t.Fatal("unsafe judge worker Redis password was accepted")
 	}
 }

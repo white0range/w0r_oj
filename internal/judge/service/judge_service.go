@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -45,7 +46,7 @@ func (s *JudgeService) Process(ctx context.Context, task dto.JudgeTask) error {
 	}
 	defer os.RemoveAll(workDir)
 
-	compiled, info, err := sandbox.CompileCode(ctx, task.Code, workDir)
+	compiled, info, err := sandbox.CompileCode(ctx, task.Code, workDir, task.SubmissionID)
 	if err != nil {
 		return s.complete(ctx, task, "SE", err.Error(), 0, 0)
 	}
@@ -58,7 +59,7 @@ func (s *JudgeService) Process(ctx context.Context, task dto.JudgeTask) error {
 	}
 	memoryLimitMB := problem.MemoryLimit
 
-	containerID, err := sandbox.StartPersistentSandbox(ctx, workDir, int64(memoryLimitMB))
+	containerID, err := sandbox.StartPersistentSandbox(ctx, workDir, int64(memoryLimitMB), task.SubmissionID)
 	if err != nil {
 		return s.complete(ctx, task, "SE", "start sandbox failed", 0, 0)
 	}
@@ -114,10 +115,14 @@ func (s *JudgeService) complete(ctx context.Context, task dto.JudgeTask, status,
 		return nil
 	}
 
-	realtime.Publish(task.UserID, "judge_result", map[string]any{
+	if err := realtime.PublishDistributed(ctx, task.UserID, "judge_result", map[string]any{
 		"submission_id": task.SubmissionID,
 		"status":        status,
-	})
+	}); err != nil {
+		// The result is already durable in MySQL. SSE is best effort and clients
+		// can always retrieve the final state through the submission endpoint.
+		log.Printf("publish judge result event submission_id=%d failed: %v", task.SubmissionID, err)
+	}
 	return nil
 }
 

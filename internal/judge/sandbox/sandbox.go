@@ -18,6 +18,7 @@ import (
 	"gojo/internal/judge/model"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
@@ -42,6 +43,12 @@ const (
 	defaultCompileTimeout = 45 * time.Second
 	judgeRuntimeImage     = "golang:alpine"
 	judgeContainerUser    = "65532:65532"
+	judgeWorkDirPrefix    = "judge_"
+
+	sandboxLabelKey           = "gojo.sandbox"
+	sandboxTypeLabelKey       = "gojo.sandbox.type"
+	sandboxSubmissionLabelKey = "gojo.submission_id"
+	sandboxOwnerLabelKey      = "gojo.sandbox.owner"
 
 	compileMemoryLimitBytes = 512 * 1024 * 1024
 	compileNanoCPUs         = 1 * 1e9
@@ -52,7 +59,12 @@ const (
 	maxRunnerResponseBytes  = 2 << 20
 )
 
-func CompileCode(ctx context.Context, code string, workDir string) (bool, string, error) {
+type OrphanCleanupSummary struct {
+	ContainersRemoved int
+	WorkDirsRemoved   int
+}
+
+func CompileCode(ctx context.Context, code string, workDir string, submissionID uint) (bool, string, error) {
 	if err := prepareWorkDir(workDir); err != nil {
 		return false, "", fmt.Errorf("prepare judge workdir permissions failed: %w", err)
 	}
@@ -70,6 +82,7 @@ func CompileCode(ctx context.Context, code string, workDir string) (bool, string
 			Image:      judgeRuntimeImage,
 			User:       judgeContainerUser,
 			WorkingDir: "/app",
+			Labels:     sandboxLabels("compile", submissionID),
 			Env: []string{
 				"HOME=/tmp",
 				"GOCACHE=/tmp/go-build",
@@ -161,7 +174,7 @@ func finalizeCompileResult(ctx context.Context, containerID string, statusCode i
 	return true, "", nil
 }
 
-func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB int64) (string, error) {
+func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB int64, submissionID uint) (string, error) {
 	if memoryLimitMB <= 0 {
 		memoryLimitMB = 256
 	}
@@ -173,6 +186,7 @@ func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB i
 		User:       judgeContainerUser,
 		Cmd:        []string{"sleep", "3600"},
 		WorkingDir: "/app",
+		Labels:     sandboxLabels("runtime", submissionID),
 	}, &container.HostConfig{
 		NetworkMode:    "none",
 		Binds:          []string{workDir + ":/app:ro"},
@@ -332,6 +346,89 @@ func RemoveSandbox(_ context.Context, containerID string) {
 	if err := docker.DockerClient.ContainerRemove(cleanupCtx, containerID, container.RemoveOptions{Force: true}); err != nil {
 		fmt.Printf("warning: failed to remove sandbox %s: %v\n", containerID, err)
 	}
+}
+
+// CleanupOrphanedResources removes judge containers and work directories left
+// behind when a previous server process did not complete its deferred cleanup.
+// It must run before the judge worker starts consuming new tasks.
+func CleanupOrphanedResources(ctx context.Context) (OrphanCleanupSummary, error) {
+	var summary OrphanCleanupSummary
+	if docker.DockerClient == nil {
+		return summary, errors.New("docker client is not initialized")
+	}
+
+	containers, err := docker.DockerClient.ContainerList(ctx, container.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.Arg("label", sandboxLabelKey+"=true"),
+			filters.Arg("label", sandboxOwnerLabelKey+"="+sandboxOwner()),
+		),
+	})
+	if err != nil {
+		return summary, fmt.Errorf("list orphaned judge containers: %w", err)
+	}
+
+	var removeErrors []error
+	for _, item := range containers {
+		if err := docker.DockerClient.ContainerRemove(ctx, item.ID, container.RemoveOptions{
+			Force:         true,
+			RemoveVolumes: true,
+		}); err != nil {
+			removeErrors = append(removeErrors, fmt.Errorf("remove judge container %s: %w", item.ID, err))
+			continue
+		}
+		summary.ContainersRemoved++
+	}
+	if len(removeErrors) > 0 {
+		// Do not delete host work directories while a labeled container may still
+		// have one mounted. The next startup can safely retry the whole cleanup.
+		return summary, errors.Join(removeErrors...)
+	}
+
+	summary.WorkDirsRemoved, err = cleanupOrphanedWorkDirs(os.TempDir())
+	if err != nil {
+		return summary, fmt.Errorf("remove orphaned judge work directories: %w", err)
+	}
+	return summary, nil
+}
+
+func sandboxLabels(sandboxType string, submissionID uint) map[string]string {
+	return map[string]string{
+		sandboxLabelKey:           "true",
+		sandboxTypeLabelKey:       sandboxType,
+		sandboxSubmissionLabelKey: strconv.FormatUint(uint64(submissionID), 10),
+		sandboxOwnerLabelKey:      sandboxOwner(),
+	}
+}
+
+func sandboxOwner() string {
+	owner := strings.TrimSpace(config.GlobalConfig.App.Env)
+	if owner == "" {
+		return "unknown"
+	}
+	return owner
+}
+
+func cleanupOrphanedWorkDirs(root string) (int, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	removed := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), judgeWorkDirPrefix) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 func writeJudgeRunner(workDir string) error {

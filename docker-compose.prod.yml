@@ -24,7 +24,6 @@ services:
     stop_grace_period: 165s
     environment:
       APP_ENV: production
-      TMPDIR: ${JUDGE_WORK_DIR:-/tmp/gojo-judge}
       GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
       GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
       GOJO_JWT_SECRET: ${GOJO_JWT_SECRET:?set GOJO_JWT_SECRET in .env.local-production}
@@ -32,13 +31,6 @@ services:
       GOJO_AI_BASE_URL: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       GOJO_AI_MODEL: ${LLM_MODEL:-deepseek-chat}
       GOJO_CHAT_AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env.local-production}
-    volumes:
-      # The current in-process Judge needs Docker to create sandbox containers.
-      - /var/run/docker.sock:/var/run/docker.sock
-      # The path must be identical inside the API container and Docker host.
-      - ${JUDGE_WORK_DIR:-/tmp/gojo-judge}:${JUDGE_WORK_DIR:-/tmp/gojo-judge}
-    group_add:
-      - "${DOCKER_GID:-0}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -48,6 +40,33 @@ services:
         condition: service_healthy
       agent:
         condition: service_started
+    networks:
+      - oj-net
+
+  judge-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/judge-worker"]
+    restart: unless-stopped
+    stop_grace_period: 165s
+    environment:
+      APP_ENV: production
+      TMPDIR: ${JUDGE_WORK_DIR:-/tmp/gojo-judge}
+      GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
+      GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
+    volumes:
+      # Only the internal judge worker can control the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Host and worker paths must match because sibling sandboxes bind this path.
+      - ${JUDGE_WORK_DIR:-/tmp/gojo-judge}:${JUDGE_WORK_DIR:-/tmp/gojo-judge}
+    group_add:
+      - "${DOCKER_GID:-0}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - oj-net
 

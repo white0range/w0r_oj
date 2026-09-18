@@ -20,16 +20,13 @@ import (
 	chatRepo "gojo/internal/chat/repository"
 	chatSvc "gojo/internal/chat/service"
 	chatWorker "gojo/internal/chat/worker"
-	"gojo/internal/judge/docker"
-	judgeRepo "gojo/internal/judge/repository"
-	judgeSvc "gojo/internal/judge/service"
-	judgeWorker "gojo/internal/judge/worker"
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	leaderboardRepo "gojo/internal/leaderboard/repository"
 	leaderboardSvc "gojo/internal/leaderboard/service"
 	problemHandler "gojo/internal/problem/handler"
 	problemRepo "gojo/internal/problem/repository"
 	problemSvc "gojo/internal/problem/service"
+	"gojo/internal/realtime"
 	subHandler "gojo/internal/submission/handler"
 	subRepo "gojo/internal/submission/repository"
 	subSvc "gojo/internal/submission/service"
@@ -59,9 +56,9 @@ func main() {
 	mysql.InitDB()
 	cache.InitRedis()
 	search.InitElasticsearch()
-
-	if err := docker.InitDockerClient(); err != nil {
-		log.Fatalf("docker client init failed: %v", err)
+	realtimeBridgeDone, err := realtime.StartDistributedBridge(shutdownSignalCtx)
+	if err != nil {
+		log.Fatalf("start realtime event bridge failed: %v", err)
 	}
 
 	ur := userRepo.NewUserRepository()
@@ -72,11 +69,8 @@ func main() {
 	syncManager := syncer.NewManager(pr, sr)
 	syncManager.Start(shutdownSignalCtx)
 
-	jr := judgeRepo.NewJudgeRepository(syncManager)
 	lr := leaderboardRepo.NewLeaderboardRepository()
 	cr := chatRepo.NewChatRepository()
-
-	judgeService := judgeSvc.NewJudgeService(jr)
 
 	submissionService := subSvc.NewSubmissionService(subR, pr)
 	userService := userSvc.NewUserService(ur, usr, submissionService)
@@ -85,9 +79,6 @@ func main() {
 	testCaseService := problemSvc.NewTestCaseService(problemRepo.NewTestCaseRepository(), syncManager)
 	leaderboardService := leaderboardSvc.NewLeaderboardService(lr, userService)
 	chatService := chatSvc.NewChatService(cr, userService, subR, pr)
-
-	jw := judgeWorker.NewJudgeWorker(judgeService, subR)
-	jw.StartWorkerPool(config.GlobalConfig.Judge.WorkerCount)
 
 	cw, err := chatWorker.NewChatWorker(cr)
 	if err != nil {
@@ -150,14 +141,13 @@ func main() {
 
 	// Stop queue consumption before waiting. Already claimed work keeps using
 	// its task context until the shutdown deadline is reached.
-	jw.StopAccepting()
 	cw.StopAccepting()
 
 	results := make(chan shutdownResult, 4)
 	go func() { results <- shutdownResult{"http server", shutdownHTTPServer(httpShutdownCtx, server)} }()
-	go func() { results <- shutdownResult{"judge workers", jw.Shutdown(backgroundShutdownCtx)} }()
 	go func() { results <- shutdownResult{"chat workers", cw.Shutdown(backgroundShutdownCtx)} }()
 	go func() { results <- shutdownResult{"sync workers", syncManager.Wait(backgroundShutdownCtx)} }()
+	go func() { results <- shutdownResult{"realtime event bridge", <-realtimeBridgeDone} }()
 
 	for i := 0; i < cap(results); i++ {
 		result := <-results
@@ -189,9 +179,6 @@ func closeInfrastructure() {
 	}
 	if err := mysql.Close(); err != nil {
 		log.Printf("close MySQL: %v", err)
-	}
-	if err := docker.Close(); err != nil {
-		log.Printf("close Docker client: %v", err)
 	}
 }
 

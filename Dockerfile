@@ -12,6 +12,7 @@ RUN go mod download
 COPY . ./
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/gojo-server ./cmd/server \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/judge-worker ./cmd/judge_worker \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed-problems ./cmd/seed_problems \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bootstrap-admin ./cmd/bootstrap_admin
 
@@ -24,14 +25,15 @@ RUN apk add --no-cache ca-certificates tzdata \
 WORKDIR /app
 
 COPY --from=builder /out/gojo-server /app/gojo-server
+COPY --from=builder /out/judge-worker /app/judge-worker
 COPY --from=builder /out/seed-problems /app/seed-problems
 COPY --from=builder /out/bootstrap-admin /app/bootstrap-admin
 # The repository ships a secret-free production template. Runtime secrets are
 # supplied through GOJO_* environment variables by Docker Compose.
 COPY config/config.production.example.yaml /app/config/config.production.yaml
 
-# The Docker socket group is supplied at runtime by Compose. The application
-# itself does not need root privileges.
+# The shared runtime remains non-root. Only the judge-worker service receives
+# the Docker socket group at runtime; the public API has no Docker access.
 USER gojo
 
 EXPOSE 8080
