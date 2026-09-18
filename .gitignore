@@ -38,4 +38,4 @@ __pycache__/
 .env
 !.env.example
 .env.local-production
-seed_problems/
+/seed_problems/
