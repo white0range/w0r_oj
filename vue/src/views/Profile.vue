@@ -6,13 +6,13 @@
         <div class="page-title">
           <div>
             <h1>{{ profile?.username || store.username || 'User' }}</h1>
-            <p class="page-subtitle">这里集中展示账号信息、已通过题目、AI 学习助手入口，以及管理员工作台入口。</p>
+            <p class="page-subtitle">记录每一道通过的题目，让努力留下清晰的轨迹。</p>
           </div>
         </div>
       </div>
       <div class="profile-badge-panel">
         <span class="profile-avatar">{{ (profile?.username || store.username || 'G').slice(0, 1).toUpperCase() }}</span>
-        <span class="badge" :class="store.isAdmin ? 'badge-admin' : 'badge-success'">{{ store.isAdmin ? '管理员' : '普通用户' }}</span>
+        <span class="badge" :class="store.isAdmin ? 'badge-admin' : 'badge-success'">{{ store.isAdmin ? '管理员' : '练习者' }}</span>
       </div>
     </section>
 
@@ -24,8 +24,7 @@
     <template v-else-if="profile">
       <section class="metric-grid">
         <article class="metric-card"><span class="metric-value">{{ profile.solvedCount }}</span><span class="metric-label">已解决题目</span></article>
-        <article class="metric-card"><span class="metric-value">{{ profile.solvedList.length }}</span><span class="metric-label">AC 记录数</span></article>
-        <article class="metric-card"><span class="metric-value">{{ profile.role === 1 ? 'Admin' : 'User' }}</span><span class="metric-label">当前角色</span></article>
+        <article class="metric-card"><span class="metric-value">{{ profile.role === 1 ? '管理员' : '练习者' }}</span><span class="metric-label">当前角色</span></article>
       </section>
 
       <section class="profile-grid">
@@ -40,7 +39,7 @@
           <button class="btn btn-ghost" @click="logout">退出登录</button>
         </article>
         <article class="card stack">
-          <div class="section-title"><h2>已通过题目</h2><span class="muted">{{ profile.solvedList.length }} items</span></div>
+          <div class="section-title"><h2>已通过题目</h2><span class="muted">{{ profile.solvedList.length }} 道题</span></div>
           <div v-if="profile.solvedList.length" class="cluster">
             <router-link v-for="problemId in profile.solvedList" :key="problemId" :to="`/problems/${problemId}`" class="pill solved-pill">#{{ problemId }}</router-link>
           </div>
@@ -49,7 +48,7 @@
       </section>
 
       <section class="ai-panel">
-        <div><span class="eyebrow">Agent Workflow</span><h2>学习助手已经接入前台。</h2><p>你可以直接发起连续对话，查看薄弱标签、推荐题目和每次回答的结构化结果。</p></div>
+        <div><span class="eyebrow">YOUR NEXT STEP</span><h2>下一步，练什么？</h2><p>和 AI 一起复盘解题思路，找到薄弱知识点，安排下一轮练习。</p></div>
         <div class="cluster"><router-link to="/chat" class="btn btn-secondary">打开 AI 学习助手</router-link></div>
       </section>
 
@@ -87,6 +86,8 @@ onMounted(async () => {
     const data = await getProfile()
     profile.value = data
     store.hydrateProfile(data)
+  } catch {
+    profile.value = null
   } finally {
     loading.value = false
   }
@@ -111,20 +112,24 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 96px;
-  height: 96px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--brand), var(--accent));
   color: #f8fbff;
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 800;
-  box-shadow: 0 20px 34px rgba(37, 99, 235, 0.18);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+}
+
+.profile-grid > .card {
+  align-content: start;
 }
 
 .quick-links {
@@ -193,7 +198,7 @@ onMounted(async () => {
 .ai-panel h2,
 .admin-panel h2 {
   margin: 16px 0 8px;
-  font-size: 34px;
+  font-size: 26px;
   letter-spacing: -0.04em;
 }
 
@@ -208,7 +213,6 @@ onMounted(async () => {
   .profile-grid {
     grid-template-columns: 1fr;
   }
-
   .profile-hero {
     flex-direction: column;
     align-items: flex-start;

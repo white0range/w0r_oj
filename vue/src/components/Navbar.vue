@@ -1,56 +1,36 @@
 <template>
-  <header class="navbar">
+  <header class="navbar" @keydown.esc="menuOpen = false">
     <div class="navbar-shell">
-      <router-link to="/" class="brand">
-        <span class="brand-mark">OJ</span>
-        <div class="brand-copy">
-          <strong>Gojo OJ</strong>
-          <span>Algorithms, Judge, AI Workflows</span>
-        </div>
+      <router-link to="/" class="brand" aria-label="Gojo OJ 首页">
+        <span class="brand-mark"><AppIcon name="code" /></span>
+        <strong>Gojo<span>OJ</span><small>ONLINE JUDGE</small></strong>
       </router-link>
-
-      <nav class="nav-links desktop-only">
-        <router-link to="/" class="nav-link">题库</router-link>
-        <router-link to="/leaderboard" class="nav-link">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/chat" class="nav-link">AI 学习助手</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="nav-link">提交记录</router-link>
-        <router-link v-if="store.isLoggedIn" to="/profile" class="nav-link">个人中心</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/users" class="nav-link nav-admin">管理后台</router-link>
+      <nav class="nav-links desktop-only" aria-label="主导航">
+        <router-link v-for="item in navigation" :key="item.to" :to="item.to" class="nav-link" :class="{ 'nav-active': isActive(item.to) }">
+          <AppIcon :name="item.icon" />{{ item.label }}
+        </router-link>
       </nav>
-
       <div class="nav-actions desktop-only">
         <template v-if="store.isLoggedIn">
-          <router-link to="/profile" class="profile-chip" :class="{ admin: store.isAdmin }">
-            <span class="profile-avatar">{{ initials }}</span>
-            <span class="profile-copy"><strong>{{ store.username }}</strong><small>{{ store.isAdmin ? 'Administrator' : 'Contestant' }}</small></span>
-          </router-link>
-          <button class="btn btn-ghost btn-sm" @click="logout">退出</button>
+          <router-link to="/profile" class="profile-chip"><span class="profile-avatar">{{ initials }}</span><strong>{{ store.username }}</strong></router-link>
+          <button class="icon-button" aria-label="退出登录" title="退出登录" @click="logout"><AppIcon name="logout" /></button>
         </template>
         <template v-else>
           <router-link to="/login" class="btn btn-ghost btn-sm">登录</router-link>
-          <router-link to="/register" class="btn btn-primary btn-sm">注册</router-link>
+          <router-link to="/register" class="btn btn-primary btn-sm">开始练习 <AppIcon name="arrow" /></router-link>
         </template>
       </div>
-
-      <button class="mobile-toggle" @click="menuOpen = !menuOpen" aria-label="Toggle navigation"><span></span><span></span></button>
+      <button class="mobile-toggle icon-button" :aria-expanded="menuOpen" aria-controls="mobile-navigation" :aria-label="menuOpen ? '关闭导航' : '打开导航'" @click="menuOpen = !menuOpen"><AppIcon :name="menuOpen ? 'close' : 'menu'" /></button>
     </div>
-
     <transition name="fade-slide">
-      <div v-if="menuOpen" class="mobile-panel">
-        <router-link to="/" class="mobile-link" @click="closeMenu">题库</router-link>
-        <router-link to="/leaderboard" class="mobile-link" @click="closeMenu">排行榜</router-link>
-        <router-link v-if="store.isLoggedIn" to="/chat" class="mobile-link" @click="closeMenu">AI 学习助手</router-link>
-        <router-link v-if="store.isLoggedIn" to="/my-submissions" class="mobile-link" @click="closeMenu">提交记录</router-link>
-        <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link" @click="closeMenu">个人中心</router-link>
-        <router-link v-if="store.isAdmin" to="/admin/users" class="mobile-link" @click="closeMenu">管理后台</router-link>
+      <nav v-if="menuOpen" id="mobile-navigation" class="mobile-panel" aria-label="手机导航">
+        <router-link v-for="item in navigation" :key="item.to" :to="item.to" class="mobile-link" :class="{ 'nav-active': isActive(item.to) }"><AppIcon :name="item.icon" />{{ item.label }}</router-link>
+        <router-link v-if="store.isLoggedIn" to="/profile" class="mobile-link"><AppIcon name="user" />个人中心</router-link>
         <div class="mobile-actions">
-          <template v-if="store.isLoggedIn"><button class="btn btn-ghost btn-block" @click="logout">退出当前账号</button></template>
-          <template v-else>
-            <router-link to="/login" class="btn btn-ghost btn-block" @click="closeMenu">登录</router-link>
-            <router-link to="/register" class="btn btn-primary btn-block" @click="closeMenu">注册</router-link>
-          </template>
+          <button v-if="store.isLoggedIn" class="btn btn-outline btn-block" @click="logout">退出登录</button>
+          <template v-else><router-link to="/login" class="btn btn-outline">登录</router-link><router-link to="/register" class="btn btn-primary">开始练习</router-link></template>
         </div>
-      </div>
+      </nav>
     </transition>
   </header>
 </template>
@@ -59,207 +39,224 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { logoutUser } from '../api'
 import { store } from '../store'
+import AppIcon from './AppIcon.vue'
 
 const menuOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
-
 const initials = computed(() => (store.username || 'G').slice(0, 1).toUpperCase())
-
-watch(
-  () => route.fullPath,
-  () => {
-    menuOpen.value = false
-  },
-)
-
-function closeMenu() {
-  menuOpen.value = false
+const navigation = computed(() => [
+  { to: '/', label: '题库', icon: 'book' },
+  { to: '/leaderboard', label: '排行榜', icon: 'trophy' },
+  { to: '/chat', label: 'AI 学习助手', icon: 'sparkles' },
+  ...(store.isLoggedIn ? [{ to: '/my-submissions', label: '提交记录', icon: 'history' }] : []),
+  ...(store.isAdmin ? [{ to: '/admin/users', label: '管理后台', icon: 'grid' }] : []),
+])
+function isActive(path) {
+  if (path === '/') return route.path === '/' || route.path.startsWith('/problems/')
+  if (path.startsWith('/admin')) return route.path.startsWith('/admin')
+  return route.path === path
 }
-
+watch(() => route.fullPath, () => { menuOpen.value = false })
 async function logout() {
-  await logoutUser()
-  closeMenu()
-  router.push('/')
+  try { await logoutUser() } finally { menuOpen.value = false; router.push('/') }
 }
 </script>
-
 <style scoped>
 .navbar {
   position: sticky;
   top: 0;
-  z-index: 30;
-  padding: 16px 16px 0;
-}
-
-.navbar-shell,
-.mobile-panel {
-  width: min(100%, var(--container));
-  margin: 0 auto;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow-sm);
+  z-index: 40;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(16px);
 }
 
 .navbar-shell {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 14px 18px;
-  border-radius: 24px;
+  gap: 32px;
+  width: min(calc(100% - 64px), var(--container));
+  height: 76px;
+  margin: auto;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 0;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, var(--brand), var(--accent));
-  color: #f8fbff;
-  font-size: 14px;
-  font-weight: 800;
-  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.18);
-}
-
-.brand-copy {
   display: grid;
-  gap: 2px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  color: white;
+  background: var(--brand);
+  box-shadow: 0 3px 8px #275be52b;
 }
 
-.brand-copy strong {
-  font-size: 18px;
-  letter-spacing: -0.03em;
+.brand-mark .app-icon {
+  width: 25px;
+  height: 25px;
 }
 
-.brand-copy span {
-  font-size: 12px;
+.brand strong {
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -.7px;
+}
+
+.brand strong > span {
+  color: var(--brand);
+  margin-left: 4px;
+}
+
+.brand small {
+  display: block;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
   color: var(--ink-faint);
+  margin-top: 5px;
 }
 
-.nav-links,
-.nav-actions {
+.nav-links {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: stretch;
+  gap: 5px;
+  height: 100%;
+  margin-left: 20px;
 }
 
 .nav-link {
-  padding: 10px 14px;
-  border-radius: 999px;
-  color: var(--ink-soft);
-  font-weight: 700;
-  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  position: relative;
+  padding: 0 14px;
+  color: var(--ink-faint);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--transition);
 }
 
-.nav-link.router-link-active,
-.nav-link:hover {
-  background: rgba(37, 99, 235, 0.08);
-  color: var(--brand-deep);
+.nav-link .app-icon {
+  width: 17px;
+  height: 17px;
 }
 
-.nav-admin {
-  color: var(--accent-deep);
+.nav-link:hover, .nav-active {
+  color: var(--brand);
+}
+
+.nav-link.nav-active::after {
+  content: '';
+  position: absolute;
+  height: 3px;
+  background: var(--brand);
+  bottom: -1px;
+  left: 14px;
+  right: 14px;
+  border-radius: 3px 3px 0 0;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .profile-chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px 7px 8px;
-  border-radius: 999px;
-  background: rgba(15, 23, 40, 0.05);
+  gap: 9px;
+  font-size: 13px;
 }
 
-.profile-chip.admin {
-  background: rgba(37, 99, 235, 0.08);
+.profile-chip strong {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: #f5fffd;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.profile-copy {
-  display: grid;
-  line-height: 1.1;
-}
-
-.profile-copy strong {
-  font-size: 13px;
-}
-
-.profile-copy small {
-  color: var(--ink-faint);
-  font-size: 11px;
-}
-
-.mobile-toggle {
-  display: none;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.mobile-toggle span {
-  width: 22px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--ink);
-}
-
-.mobile-panel {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 18px;
-  border-radius: 24px;
-}
-
-.mobile-link {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
+  color: var(--brand);
+  background: #eef3ff;
   font-weight: 700;
 }
 
-.mobile-actions {
-  display: grid;
-  gap: 10px;
-  padding-top: 8px;
+.mobile-toggle, .mobile-panel {
+  display: none;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
+  .navbar-shell {
+    gap: 16px;
+  }
+  .nav-links {
+    margin-left: 0;
+  }
+  .nav-link {
+    padding-inline: 10px;
+  }
+  .nav-link .app-icon {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .navbar-shell {
+    width: calc(100% - 32px);
+    height: 64px;
+  }
   .desktop-only {
     display: none;
   }
-
   .mobile-toggle {
     display: inline-flex;
+    margin-left: auto;
   }
-
-  .navbar-shell,
   .mobile-panel {
-    width: 100%;
+    display: grid;
+    gap: 4px;
+    padding: 12px 16px 18px;
+    border-top: 1px solid var(--line);
+    box-shadow: var(--shadow-md);
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+  }
+  .mobile-link {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  .mobile-link.nav-active {
+    background: var(--surface-tint);
+  }
+  .mobile-actions {
+    display: flex;
+    gap: 10px;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+    margin-top: 8px;
+  }
+  .mobile-actions .btn {
+    flex: 1;
   }
 }
 </style>

@@ -1,9 +1,8 @@
 ﻿<template>
   <div class="shell">
-    <div class="shell-noise"></div>
-    <div class="shell-glow"></div>
+    <a class="skip-link" href="#main-content" @click.prevent="skipToContent">跳转到主要内容</a>
     <Navbar />
-    <main class="shell-main">
+    <main id="main-content" class="shell-main" tabindex="-1">
       <router-view v-slot="{ Component }">
         <transition name="fade-slide" mode="out-in">
           <component :is="Component" />
@@ -15,12 +14,14 @@
         <div>
           <div class="footer-brand">Gojo OJ</div>
           <div class="footer-caption">
-            Online judge for algorithm practice, asynchronous judging, progress tracking, and AI-assisted study sessions.
+            专注算法，持续进步。
           </div>
         </div>
-        <div class="footer-caption footer-tech">
-          Go API · Redis Queue · Docker Sandbox · Elasticsearch · Python Agent · Vue Console
-        </div>
+        <nav class="footer-links" aria-label="页脚导航">
+          <router-link to="/">题库</router-link>
+          <router-link to="/leaderboard">排行榜</router-link>
+          <router-link to="/chat">AI 学习助手</router-link>
+        </nav>
       </div>
       <div class="footer-filing">
         <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
@@ -33,5 +34,9 @@
 
 <script setup>
 import Navbar from './components/Navbar.vue'
+
+function skipToContent() {
+  document.getElementById('main-content')?.focus()
+}
 </script>
 

@@ -1,5 +1,6 @@
 <template>
   <div class="page">
+    <router-link to="/" class="back-link">← 返回题库</router-link>
     <section v-if="loading" class="loading-state">
       <strong>题目详情加载中</strong>
       <span class="spinner spinner-dark"></span>
@@ -12,7 +13,7 @@
           <div class="page-title">
             <div>
               <h1>{{ problem.title }}</h1>
-              <p class="page-subtitle">查看题面、资源限制、提交状态，并直接进入在线提交流程。</p>
+              <p class="page-subtitle">读懂题意，写下解法，用一次提交验证你的思考。</p>
             </div>
           </div>
           <div class="cluster">
@@ -29,8 +30,8 @@
 
         <aside class="hero-side-panel">
           <div class="hero-side-block">
-            <span class="meta-label">Judge Status</span>
-            <strong>{{ problem.isAc ? 'Already Accepted' : 'Ready to Submit' }}</strong>
+            <span class="meta-label">YOUR PROGRESS</span>
+            <strong>{{ problem.isAc ? '已通过这道题' : '准备好挑战了吗' }}</strong>
             <p>{{ problem.isAc ? '该账号已经通过这道题，可以继续优化代码或做复盘。' : '建议先读题并确认边界条件，再在右侧编辑器里提交第一版解法。' }}</p>
           </div>
         </aside>
@@ -40,7 +41,7 @@
         <article class="card stack">
           <div class="section-title">
             <h2>题目描述</h2>
-            <span class="muted">Raw problem statement</span>
+            <span class="muted">PROBLEM STATEMENT</span>
           </div>
           <div class="description-body" v-html="renderedDescription"></div>
         </article>
@@ -48,13 +49,13 @@
         <article class="card stack submit-panel">
           <div class="section-title">
             <h2>在线提交</h2>
-            <span class="muted">/api/submit</span>
+            <span class="muted">CODE & SUBMIT</span>
           </div>
 
           <div v-if="!store.isLoggedIn" class="empty-state compact-state">
             <strong>登录后才能提交代码</strong>
-            <span class="muted">当前提交接口需要 JWT 鉴权，登录后即可体验完整判题链路。</span>
-            <router-link to="/login" class="btn btn-primary">去登录</router-link>
+            <span class="muted">登录后即可编写代码、提交判题并记录你的解题进度。</span>
+            <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }" class="btn btn-primary">去登录</router-link>
           </div>
 
           <template v-else>
@@ -71,19 +72,20 @@
                 id="code"
                 v-model="code"
                 class="textarea mono code-editor"
+                spellcheck="false" autocapitalize="off" autocomplete="off"
                 :placeholder="placeholderByLanguage[language]"
               ></textarea>
             </div>
 
             <div class="cluster">
               <button class="btn btn-primary" :disabled="submitting || !code.trim()" @click="handleSubmit">
-                <span v-if="submitting" class="spinner"></span>
+                <span v-if="submitting" class="spinner"></span><span v-if="submitting">提交中…</span>
                 <span v-else>提交判题</span>
               </button>
               <button class="btn btn-outline" @click="code = placeholderByLanguage[language]">插入模板</button>
             </div>
 
-            <div v-if="submitState" class="submit-feedback" :class="submitState.kind">
+            <div v-if="submitState" role="status" aria-live="polite" class="submit-feedback" :class="submitState.kind">
               <div>
                 <strong>{{ submitState.title }}</strong>
                 <p>{{ submitState.message }}</p>
@@ -317,9 +319,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.back-link {
+  font-size: 12px;
+  color: var(--ink-faint);
+  width: fit-content;
+}
+
+.back-link:hover {
+  color: var(--brand);
+}
+
 .problem-hero {
   display: grid;
-  grid-template-columns: 1.3fr 0.7fr;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 20px;
 }
 
@@ -336,7 +348,7 @@ onUnmounted(() => {
 .hero-side-block {
   padding: 20px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -363,7 +375,7 @@ onUnmounted(() => {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: 1.08fr 0.92fr;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
   gap: 18px;
 }
 
@@ -376,7 +388,7 @@ onUnmounted(() => {
   margin: 18px 0;
   padding: 16px;
   overflow: auto;
-  border-radius: 18px;
+  border-radius: var(--radius-sm);
   background: var(--surface-dark);
   color: #edf3ff;
 }
@@ -390,7 +402,9 @@ onUnmounted(() => {
 }
 
 .code-editor {
-  min-height: 340px;
+  min-height: 380px;
+  line-height: 1.9;
+  tab-size: 4;
   background: var(--surface-dark);
   color: #edf3ff;
   border-color: rgba(255, 255, 255, 0.08);
@@ -400,7 +414,7 @@ onUnmounted(() => {
   display: grid;
   gap: 12px;
   padding: 18px;
-  border-radius: 18px;
+  border-radius: var(--radius-sm);
 }
 
 .submit-feedback strong {

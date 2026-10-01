@@ -1,733 +1,968 @@
 <template>
   <div class="page workspace-page">
-    <section class="workspace-masthead">
-      <div class="workspace-copy">
-        <span class="workspace-kicker">Problem Workspace</span>
-        <h1>围绕题库、筛选与提交流转的 OJ 工作台</h1>
-        <p>
-          从这里进入日常刷题流程：按标签筛选题目、快速查看通过率与限制、定位当前页结果，
-          再进入题目详情完成代码提交与复盘。
-        </p>
-        <div class="cluster workspace-actions">
-          <a href="#problem-explorer" class="btn btn-primary">浏览题库</a>
-          <router-link to="/leaderboard" class="btn btn-outline">查看排行榜</router-link>
-          <router-link v-if="store.isLoggedIn" to="/chat" class="btn btn-ghost">打开 AI 学习助手</router-link>
-          <router-link v-else to="/register" class="btn btn-secondary">创建账户</router-link>
+    <div class="workspace-heading"><span><span class="heading-dot"></span>算法学习工作台</span><span class="heading-caption">PRACTICE. THINK. GROW.</span></div>
+    <section class="practice-hero">
+      <div class="hero-copy">
+        <span class="hero-eyebrow">BUILD YOUR NEXT BREAKTHROUGH</span>
+        <h1>每一次提交，<br>都是向前一步<span class="hero-period">。</span></h1>
+        <p>从一道题开始，在思考与实践中，让解题能力成为你的底气。</p>
+        <div class="cluster hero-actions">
+          <button class="btn btn-primary" @click="scrollToProblems">开始刷题 <AppIcon name="arrow" /></button>
+          <router-link to="/chat" class="hero-text-link"><AppIcon name="sparkles" />和 AI 一起学习 <AppIcon name="chevron" /></router-link>
         </div>
+        <div class="hero-topics"><span>算法练习</span><i></i><span>在线判题</span><i></i><span>学习复盘</span></div>
       </div>
+      <div class="algorithm-art" aria-hidden="true">
+        <div class="art-label"><span class="art-dot"></span>THINK IN ALGORITHMS</div>
+        <svg viewBox="0 0 380 205" class="tree-illustration">
+          <defs><linearGradient id="tree-line" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6586dc"/><stop offset="1" stop-color="#a8dac8"/></linearGradient></defs>
+          <path d="M190 38 103 108M190 38l87 70M103 108l-51 60M103 108l51 60M277 108l-51 60M277 108l51 60" stroke="url(#tree-line)" stroke-width="1.5" fill="none" />
+          <g v-for="node in treeNodes" :key="node.label"><circle :cx="node.x" :cy="node.y" r="22" :fill="node.active ? '#b3efcd' : '#203452'" :stroke="node.active ? '#b3efcd' : '#587093'" stroke-width="1"/><text :x="node.x" :y="node.y + 5" text-anchor="middle" :fill="node.active ? '#143c2b' : '#bccde7'" font-size="14" font-family="Consolas, monospace">{{ node.label }}</text></g>
+        </svg>
+        <div class="art-code"><span class="code-symbol">↳</span><code>while (learning) { grow(); }</code><span class="art-check"><AppIcon name="check" /></span></div>
+        <span class="art-caption">小步迭代 · 不断进阶</span>
+      </div>
+    </section>
 
-      <aside class="workspace-overview">
-        <article class="overview-card overview-card-strong">
-          <span class="overview-label">题库总量</span>
-          <strong>{{ total }}</strong>
-          <span class="overview-meta">持续维护中的在线题单</span>
-        </article>
-        <article class="overview-card">
-          <span class="overview-label">标签数量</span>
-          <strong>{{ tags.length }}</strong>
-          <span class="overview-meta">按知识点组织筛选入口</span>
-        </article>
-        <article class="overview-card">
-          <span class="overview-label">当前页结果</span>
-          <strong>{{ visibleProblems.length }}</strong>
-          <span class="overview-meta">结合筛选和关键词的即时结果</span>
-        </article>
-        <article class="overview-card">
-          <span class="overview-label">当前页已通过</span>
-          <strong>{{ solvedVisibleCount }}</strong>
-          <span class="overview-meta">只统计当前列表中已 AC 的题目</span>
-        </article>
-      </aside>
+    <section class="overview-grid" aria-label="题库概览">
+      <article class="overview-item"><span class="stat-icon"><AppIcon name="book" /></span><div><strong>{{ loading ? '—' : total }}</strong><span>{{ selectedTagId ? '标签内题目' : '可练习题目' }}</span></div><small>PROBLEMS</small></article>
+      <article class="overview-item"><span class="stat-icon teal"><AppIcon name="tag" /></span><div><strong>{{ tags.length }}</strong><span>知识点标签</span></div><small>TOPICS</small></article>
+      <article class="overview-item"><span class="stat-icon purple"><AppIcon name="code" /></span><div><strong>{{ loading ? '—' : visibleProblems.length }}</strong><span>本页题目</span></div><small>ON THIS PAGE</small></article>
+      <article class="overview-item"><span class="stat-icon green"><AppIcon name="check" /></span><div><strong>{{ store.isLoggedIn ? solvedVisibleCount : '—' }}</strong><span>本页已通过</span></div><small>{{ store.isLoggedIn ? 'ACCEPTED' : '登录后记录进度' }}</small></article>
     </section>
 
     <section id="problem-explorer" class="workspace-grid">
-      <section class="workspace-primary card">
-        <div class="explorer-head">
-          <div>
-            <span class="section-kicker">Problem Explorer</span>
-            <h2>题库浏览</h2>
-            <p>关键词过滤只作用于当前页，标签筛选会请求后端刷新题目列表。</p>
-          </div>
-          <div class="explorer-summary">
-            <strong>{{ total }}</strong>
-            <span>题目总数</span>
-            <small>第 {{ page }} / {{ totalPages }} 页</small>
-          </div>
+      <section class="problem-explorer card" :aria-busy="loading">
+        <div class="explorer-head"><div><h2><AppIcon name="book" />探索题库 <span class="count-badge">{{ total }}</span></h2><p>选择一个知识点，开启今天的练习。</p></div><button class="icon-button" aria-label="刷新题库" :disabled="loading" @click="fetchProblems"><AppIcon name="refresh" /></button></div>
+        <div class="search-bar"><AppIcon name="search" /><input id="problem-search" v-model.trim="searchTerm" aria-label="按题号或标题搜索当前页" placeholder="搜索本页题目，输入题号或标题…" /><button v-if="searchTerm" class="icon-button" aria-label="清空搜索" @click="searchTerm = ''"><AppIcon name="close" /></button><span v-else class="search-scope">当前页</span></div>
+        <div class="filter-strip" aria-label="题目标签">
+          <button class="tag-toggle" :class="{ active: !selectedTagId }" :aria-pressed="!selectedTagId" @click="applyTag(null)">全部题目</button>
+          <button v-for="tag in tags" :key="tag.id" class="tag-toggle" :class="{ active: selectedTagId === tag.id }" :aria-pressed="selectedTagId === tag.id" @click="applyTag(tag.id)">{{ tag.name }}</button>
         </div>
-
-        <div class="explorer-toolbar">
-          <div class="field search-field">
-            <label for="problem-search">搜索题目</label>
-            <input
-              id="problem-search"
-              v-model.trim="searchTerm"
-              class="input"
-              placeholder="按题号、标题或关键字过滤当前页"
-            />
-          </div>
-
-          <div class="toolbar-stats">
-            <div>
-              <span class="toolbar-stat-label">当前标签</span>
-              <strong>{{ activeTagLabel }}</strong>
-            </div>
-            <div>
-              <span class="toolbar-stat-label">当前页命中</span>
-              <strong>{{ visibleProblems.length }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="filter-strip">
-          <button class="tag-toggle" :class="{ active: !selectedTagId }" @click="applyTag(null)">全部题目</button>
-          <button
-            v-for="tag in tags"
-            :key="tag.id"
-            class="tag-toggle"
-            :class="{ active: selectedTagId === tag.id }"
-            @click="applyTag(tag.id)"
-          >
-            {{ tag.name }}
-          </button>
-        </div>
-
-        <div v-if="loading" class="loading-state">
-          <strong>题库加载中</strong>
-          <span class="spinner spinner-dark"></span>
-        </div>
-
+        <p v-if="tagsError" class="tags-error" role="status">{{ tagsError }} <button @click="fetchTags">重新加载标签</button></p>
+        <div v-if="loading" class="table-skeleton" role="status" aria-label="正在加载题库"><div v-for="index in 6" :key="index" class="skeleton-row"><span></span><span></span><span></span></div></div>
+        <div v-else-if="error" class="empty-state" role="alert"><AppIcon name="refresh" /><strong>题库暂时无法加载</strong><span class="muted">{{ error }}</span><button class="btn btn-outline" @click="fetchProblems">重新加载</button></div>
         <template v-else-if="visibleProblems.length">
-          <section class="problem-table workspace-table">
-            <div class="problem-row problem-head">
-              <span>题号</span>
-              <span>题目</span>
-              <span>标签</span>
-              <span>限制</span>
-              <span>通过率</span>
-            </div>
-            <router-link
-              v-for="problem in visibleProblems"
-              :key="problem.id"
-              :to="`/problems/${problem.id}`"
-              class="problem-row problem-item"
-            >
-              <div class="problem-id">
-                <strong>#{{ problem.id }}</strong>
-                <span v-if="problem.isAc" class="badge badge-success">已通过</span>
-              </div>
-              <div class="problem-main">
-                <strong>{{ problem.title }}</strong>
-                <span>{{ problem.submitCount }} 次提交 · {{ problem.acceptedCount }} 次通过</span>
-              </div>
-              <div class="problem-tags">
-                <span v-for="tag in problem.tags" :key="tag.id" class="mini-tag">{{ tag.name }}</span>
-                <span v-if="!problem.tags.length" class="mini-tag">未分类</span>
-              </div>
-              <div class="problem-limit">
-                <span>{{ problem.timeLimit }} ms</span>
-                <span>{{ problem.memoryLimit }} MB</span>
-              </div>
-              <div class="problem-rate">
-                <strong>{{ getAcceptanceRate(problem) }}%</strong>
-                <small>acceptance</small>
-              </div>
+          <div class="problem-table">
+            <div class="problem-row problem-head"><span>状态 / 题号</span><span>题目名称</span><span>知识点</span><span>通过率</span></div>
+            <router-link v-for="problem in visibleProblems" :key="problem.id" :to="`/problems/${problem.id}`" class="problem-row problem-item">
+              <div class="problem-id"><span class="solve-status" :class="{ solved: problem.isAc }" :title="problem.isAc ? '已通过' : '尚未通过'"><AppIcon :name="problem.isAc ? 'check' : 'circle'" /></span><span class="mono">{{ String(problem.id).padStart(3, '0') }}</span></div>
+              <div class="problem-main"><strong>{{ problem.title }}</strong><span>{{ problem.submitCount }} 次提交 <b>·</b> {{ problem.acceptedCount }} 次通过</span></div>
+              <div class="problem-tags"><span v-for="tag in problem.tags.slice(0, 2)" :key="tag.id" class="mini-tag">{{ tag.name }}</span><span v-if="problem.tags.length > 2" class="mini-tag" :title="problem.tags.map(tag => tag.name).join('、')">+{{ problem.tags.length - 2 }}</span><span v-if="!problem.tags.length" class="muted">—</span></div>
+              <div class="problem-rate"><strong>{{ getAcceptanceRate(problem) }}<small>%</small></strong><span class="rate-track"><i :style="{ width: `${getAcceptanceRate(problem)}%` }"></i></span></div>
             </router-link>
-          </section>
-
-          <div v-if="totalPages > 1" class="pagination workspace-pagination">
-            <button class="page-chip" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
-            <button
-              v-for="pageNumber in pagesToShow"
-              :key="pageNumber"
-              class="page-chip"
-              :class="{ active: pageNumber === page }"
-              @click="changePage(pageNumber)"
-            >
-              {{ pageNumber }}
-            </button>
-            <button class="page-chip" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
           </div>
         </template>
-
-        <div v-else class="empty-state">
-          <strong>没有符合条件的题目</strong>
-          <span class="muted">可以切换标签或清空搜索关键字后再试。</span>
-        </div>
+        <div v-else class="empty-state"><AppIcon name="search" /><strong>没有找到相关题目</strong><span class="muted">试试其他标签，或清空本页搜索。</span><button class="btn btn-outline btn-sm" @click="resetFilters">重置筛选</button></div>
+        <div v-if="!error && !loading" class="explorer-footer"><span>第 {{ page }} / {{ totalPages }} 页 · 本页 {{ visibleProblems.length }} 道题</span><div v-if="totalPages > 1" class="pagination"><button class="page-chip" :disabled="page <= 1" aria-label="上一页" @click="changePage(page - 1)">‹</button><button v-for="number in pagesToShow" :key="number" class="page-chip" :class="{ active: number === page }" :aria-current="number === page ? 'page' : undefined" @click="changePage(number)">{{ number }}</button><button class="page-chip" :disabled="page >= totalPages" aria-label="下一页" @click="changePage(page + 1)">›</button></div></div>
       </section>
-
-      <aside class="workspace-secondary stack">
-        <section class="workspace-panel">
-          <div class="panel-head">
-            <span class="section-kicker">Current Filter</span>
-            <h3>当前筛选状态</h3>
-          </div>
-          <dl class="filter-summary">
-            <div>
-              <dt>标签</dt>
-              <dd>{{ activeTagLabel }}</dd>
-            </div>
-            <div>
-              <dt>关键词</dt>
-              <dd>{{ searchTerm || '未输入' }}</dd>
-            </div>
-            <div>
-              <dt>分页</dt>
-              <dd>第 {{ page }} / {{ totalPages }} 页</dd>
-            </div>
-            <div>
-              <dt>本页通过</dt>
-              <dd>{{ solvedVisibleCount }} / {{ visibleProblems.length || 0 }}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section class="workspace-panel">
-          <div class="panel-head">
-            <span class="section-kicker">Popular Tags</span>
-            <h3>常用标签</h3>
-          </div>
-          <div class="cluster panel-tags">
-            <button
-              v-for="tag in topTags"
-              :key="`top-${tag.id}`"
-              class="tag-toggle panel-tag"
-              :class="{ active: selectedTagId === tag.id }"
-              @click="applyTag(tag.id)"
-            >
-              {{ tag.name }}
-            </button>
-          </div>
-        </section>
-
-        <section class="workspace-panel" v-if="featuredProblems.length">
-          <div class="panel-head">
-            <span class="section-kicker">Starter Picks</span>
-            <h3>当前页优先查看</h3>
-          </div>
-          <div class="featured-list">
-            <router-link
-              v-for="problem in featuredProblems"
-              :key="`featured-${problem.id}`"
-              :to="`/problems/${problem.id}`"
-              class="featured-problem"
-            >
-              <div>
-                <strong>#{{ problem.id }} {{ problem.title }}</strong>
-                <span>{{ getAcceptanceRate(problem) }}% 通过率 · {{ problem.timeLimit }} ms</span>
-              </div>
-              <span class="featured-link">查看题目</span>
-            </router-link>
-          </div>
-        </section>
+      <aside class="workspace-sidebar">
+        <section class="assistant-card"><span class="assistant-icon"><AppIcon name="sparkles" /></span><span class="sidebar-kicker">YOUR LEARNING PARTNER</span><h3>卡住了？<br>换个思路试试看。</h3><p>拆解算法思路，分析薄弱知识点，找到适合你的下一道题。</p><router-link to="/chat" class="btn btn-primary btn-block">问问 AI 助手 <AppIcon name="arrow" /></router-link><span class="assistant-note">让思考更有方向</span></section>
+        <section class="sidebar-card"><div class="sidebar-title"><AppIcon name="trophy" /><h3>在练习中看见成长</h3></div><p>每一次通过都值得记录。看看大家的进度，也为自己定个小目标。</p><router-link to="/leaderboard" class="sidebar-link">查看排行榜 <AppIcon name="arrow" /></router-link></section>
+        <section class="practice-note"><span class="note-number">01 / KEEP GOING</span><p>先独立思考，再验证答案。<br>真正的进步，来自每一次复盘。</p><span>Happy coding.</span></section>
       </aside>
     </section>
   </div>
 </template>
-
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getProblems, getTags } from '../api'
+import { getProblems, getTags, getErrorMessage } from '../api'
 import { store } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
+import AppIcon from '../components/AppIcon.vue'
 
 const problems = ref([])
 const tags = ref([])
 const total = ref(0)
 const page = ref(1)
-const limit = ref(12)
+const limit = 12
 const selectedTagId = ref(null)
 const searchTerm = ref('')
 const loading = ref(true)
-
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
-
+const error = ref('')
+const tagsError = ref('')
+let requestId = 0
+const treeNodes = [
+  { x: 190, y: 38, label: '8', active: true },
+  { x: 103, y: 108, label: '4', active: true },
+  { x: 277, y: 108, label: '12', active: false },
+  { x: 52, y: 168, label: '2', active: false },
+  { x: 154, y: 168, label: '6', active: true },
+  { x: 226, y: 168, label: '10', active: false },
+  { x: 328, y: 168, label: '14', active: false },
+]
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const pagesToShow = computed(() => {
-  const items = []
-  const start = Math.max(1, page.value - 2)
-  const end = Math.min(totalPages.value, page.value + 2)
-
-  for (let index = start; index <= end; index += 1) {
-    items.push(index)
-  }
-
-  return items
+  const start = Math.max(1, Math.min(page.value - 2, totalPages.value - 4))
+  return Array.from({ length: Math.min(5, totalPages.value) }, (_, index) => start + index)
 })
-
 const visibleProblems = computed(() => {
-  if (!searchTerm.value) {
-    return problems.value
-  }
-
   const keyword = searchTerm.value.toLowerCase()
-  return problems.value.filter((problem) => problem.title.toLowerCase().includes(keyword) || String(problem.id).includes(keyword))
+  return problems.value.filter(problem => !keyword || problem.title.toLowerCase().includes(keyword) || String(problem.id).includes(keyword))
 })
-
-const activeTagLabel = computed(() => {
-  if (!selectedTagId.value) {
-    return '全部题目'
-  }
-  return tags.value.find((tag) => tag.id === selectedTagId.value)?.name || '未知标签'
-})
-
-const solvedVisibleCount = computed(() => visibleProblems.value.filter((problem) => problem.isAc).length)
-
-const topTags = computed(() => tags.value.slice(0, 12))
-
-const featuredProblems = computed(() => visibleProblems.value.slice(0, 3))
-
+const solvedVisibleCount = computed(() => visibleProblems.value.filter(problem => problem.isAc).length)
 async function fetchProblems() {
+  const currentRequest = ++requestId
   loading.value = true
-
+  error.value = ''
   try {
-    const data = await getProblems({
-      page: page.value,
-      limit: limit.value,
-      ...(selectedTagId.value ? { tag_id: selectedTagId.value } : {}),
-    })
-
+    const data = await getProblems({ page: page.value, limit, ...(selectedTagId.value ? { tag_id: selectedTagId.value } : {}) })
+    if (currentRequest !== requestId) return
     problems.value = data.items
     total.value = data.total
+  } catch (requestError) {
+    if (currentRequest === requestId) error.value = getErrorMessage(requestError, '请检查网络连接后重试。')
   } finally {
-    loading.value = false
+    if (currentRequest === requestId) loading.value = false
   }
 }
-
 async function fetchTags() {
-  tags.value = await getTags()
+  tagsError.value = ''
+  try { tags.value = await getTags() }
+  catch { tagsError.value = '知识点标签加载失败。' }
 }
-
-function applyTag(tagId) {
-  selectedTagId.value = tagId
-  page.value = 1
+function applyTag(id) { selectedTagId.value = id; page.value = 1; fetchProblems() }
+function resetFilters() { searchTerm.value = ''; applyTag(null) }
+function changePage(next) {
+  if (next < 1 || next > totalPages.value || next === page.value) return
+  page.value = next
   fetchProblems()
 }
-
-function changePage(nextPage) {
-  if (nextPage < 1 || nextPage > totalPages.value) {
-    return
-  }
-
-  page.value = nextPage
-  fetchProblems()
-}
-
-onMounted(async () => {
-  await Promise.all([fetchProblems(), fetchTags()])
-})
+function scrollToProblems() { document.getElementById('problem-explorer')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }
+onMounted(() => Promise.all([fetchProblems(), fetchTags()]))
 </script>
-
 <style scoped>
 .workspace-page {
-  gap: 24px;
+  gap: 22px;
 }
 
-.workspace-masthead {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: 20px;
-  padding: 28px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  border-radius: 30px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.9)),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 30%);
-  box-shadow: var(--shadow-md);
-}
-
-.workspace-copy {
-  display: grid;
-  align-content: start;
-  gap: 18px;
-}
-
-.workspace-kicker,
-.section-kicker {
-  display: inline-flex;
+.workspace-heading {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  width: fit-content;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(15, 23, 40, 0.06);
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.workspace-copy h1 {
-  margin: 0;
-  max-width: 780px;
-  font-size: clamp(38px, 4.8vw, 64px);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
-}
-
-.workspace-copy p {
-  margin: 0;
-  max-width: 760px;
-  color: var(--ink-soft);
-  font-size: 16px;
-}
-
-.workspace-actions {
-  margin-top: 6px;
-}
-
-.workspace-overview {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.overview-card {
-  display: grid;
-  gap: 10px;
-  min-height: 152px;
-  padding: 20px;
-  border: 1px solid rgba(15, 23, 40, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.overview-card-strong {
-  background: linear-gradient(145deg, rgba(29, 78, 216, 0.98), rgba(37, 99, 235, 0.88));
-  color: #f8fbff;
-}
-
-.overview-card-strong .overview-label,
-.overview-card-strong .overview-meta {
-  color: rgba(248, 251, 255, 0.8);
-}
-
-.overview-label {
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.workspace-heading > span:first-child {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+
+.heading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.heading-caption {
+  font-size: 9px;
+  letter-spacing: 2px;
   color: var(--ink-faint);
 }
 
-.overview-card strong {
-  font-size: clamp(30px, 4vw, 42px);
-  letter-spacing: -0.05em;
+.practice-hero {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  position: relative;
+  overflow: hidden;
+  padding: 36px 42px;
+  background: #142440;
+  border: 1px solid #243957;
+  border-radius: 16px;
+  color: white;
 }
 
-.overview-meta {
-  color: var(--ink-soft);
+.practice-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 85% 10%, #315ee730, transparent 55%);
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-eyebrow {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2.6px;
+  color: #94aace;
+}
+
+.hero-copy h1 {
+  margin: 16px 0 14px;
+  font-size: clamp(30px, 3.4vw, 44px);
+  letter-spacing: 1px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.hero-period {
+  color: #b3efcd;
+}
+
+.hero-copy p {
+  margin: 0;
   font-size: 13px;
+  color: #a9b8d1;
+}
+
+.hero-actions {
+  margin-top: 25px;
+  gap: 24px;
+}
+
+.hero-actions .btn {
+  min-height: 42px;
+  padding-inline: 20px;
+}
+
+.hero-text-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  color: #d0dbee;
+  transition: color var(--transition);
+}
+
+.hero-text-link:hover {
+  color: #b3efcd;
+}
+
+.hero-text-link .app-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hero-topics {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 22px;
+  font-size: 10px;
+  color: #7e95b8;
+}
+
+.hero-topics i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #62799d;
+}
+
+.algorithm-art {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  position: relative;
+  padding: 4px 20px;
+  background-image: radial-gradient(#7a99ce25 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.art-label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #9bafd0;
+}
+
+.art-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #b3efcd;
+  box-shadow: 0 0 12px #b3efcd55;
+}
+
+.tree-illustration {
+  width: 340px;
+  height: 190px;
+}
+
+.art-code {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid #58709350;
+  border-radius: 8px;
+  background: #142440;
+  color: #b7c9e5;
+  font-size: 11px;
+}
+
+.code-symbol {
+  color: #b3efcd;
+}
+
+.art-check .app-icon {
+  width: 14px;
+  height: 14px;
+  color: #b3efcd;
+}
+
+.art-caption {
+  margin-top: 12px;
+  font-size: 10px;
+  color: #6e88ae;
+  letter-spacing: 2px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.overview-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  position: relative;
+  min-width: 0;
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-tint);
+  color: var(--brand);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.stat-icon.teal {
+  background: #eaf5f4;
+  color: #258f86;
+}
+
+.stat-icon.purple {
+  background: #f2effb;
+  color: #9271cc;
+}
+
+.stat-icon.green {
+  background: #eaf6ee;
+  color: #458e60;
+}
+
+.overview-item > div {
+  display: grid;
+  gap: 1px;
+}
+
+.overview-item strong {
+  font-size: 24px;
+  letter-spacing: -.8px;
+  line-height: 1.2;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-item div span {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.overview-item small {
+  position: absolute;
+  right: 14px;
+  top: 13px;
+  font-size: 7px;
+  letter-spacing: .7px;
+  color: #a4aec0;
 }
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 340px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  gap: 22px;
   align-items: start;
 }
 
-.workspace-primary {
-  display: grid;
-  gap: 18px;
-  padding: 22px;
+.problem-explorer {
+  padding: 0;
+  overflow: hidden;
 }
 
 .explorer-head {
   display: flex;
-  align-items: end;
   justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
+  align-items: center;
+  padding: 22px 24px 0;
 }
 
-.explorer-head h2,
-.panel-head h3 {
-  margin: 8px 0 0;
-  font-size: 26px;
-  letter-spacing: -0.04em;
-}
-
-.explorer-head p,
-.panel-head p {
-  margin: 8px 0 0;
-  color: var(--ink-soft);
-}
-
-.explorer-summary {
-  display: grid;
-  gap: 2px;
-  min-width: 180px;
-  justify-items: end;
-}
-
-.explorer-summary strong {
-  font-size: 30px;
-  letter-spacing: -0.05em;
-}
-
-.explorer-summary span,
-.explorer-summary small,
-.toolbar-stat-label {
-  color: var(--ink-soft);
-}
-
-.explorer-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: end;
-}
-
-.search-field {
-  min-width: 280px;
-}
-
-.toolbar-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
-  gap: 12px;
-}
-
-.toolbar-stats div {
-  display: grid;
-  gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(245, 248, 255, 0.9);
-}
-
-.toolbar-stats strong {
+.explorer-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
   font-size: 18px;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.explorer-head h2 > .app-icon {
+  color: var(--brand);
+  width: 19px;
+  height: 19px;
+}
+
+.count-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  background: var(--bg-soft);
+  color: var(--ink-faint);
+  border-radius: 5px;
+  margin-left: 2px;
+}
+
+.explorer-head p {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 6px 0 0;
+}
+
+.search-bar {
+  margin: 20px 24px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fafd;
+  color: #8c98ad;
+}
+
+.search-bar:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px #315ee712;
+}
+
+.search-bar > .app-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.search-bar input {
+  width: 100%;
+  min-width: 0;
+  outline: 0;
+  padding: 11px 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 12px;
+}
+
+.search-scope {
+  flex-shrink: 0;
+  font-size: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .filter-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  padding-bottom: 4px;
+  gap: 7px;
+  padding: 0 24px 20px;
 }
 
-.workspace-table {
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.84);
+.filter-strip .tag-toggle {
+  border-color: transparent;
+  background: #f6f8fc;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.filter-strip .tag-toggle.active {
+  background: var(--surface-tint);
+  color: var(--brand);
+  border-color: #315ee722;
 }
 
 .problem-row {
   display: grid;
-  grid-template-columns: 110px 1.5fr 1.1fr 150px 110px;
-  gap: 16px;
+  grid-template-columns: 100px minmax(0, 1fr) 180px 80px;
+  gap: 14px;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.problem-row:last-child {
-  border-bottom: 0;
+  padding: 17px 24px;
+  border-bottom: 1px solid #edf0f5;
 }
 
 .problem-head {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  background: #f9fafd;
   color: var(--ink-faint);
-  background: rgba(245, 248, 255, 0.95);
+  font-size: 10px;
+  padding-block: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .problem-item {
-  transition: background var(--transition), transform var(--transition);
+  transition: background var(--transition);
 }
 
 .problem-item:hover {
-  background: rgba(37, 99, 235, 0.04);
-  transform: translateY(-1px);
+  background: #f8faff;
 }
 
-.problem-id,
-.problem-main,
-.problem-limit,
-.problem-rate {
+.problem-item:last-child {
+  border-bottom: 0;
+}
+
+.problem-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #8c99ac;
+}
+
+.solve-status {
+  display: flex;
+  color: #bec7d6;
+}
+
+.solve-status .app-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.solve-status.solved {
+  color: var(--success);
+  background: #e7f6ef;
+  border-radius: 50%;
+  padding: 2px;
+  margin-left: -2px;
+  margin-right: -2px;
+}
+
+.problem-main {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.problem-main strong,
-.problem-rate strong {
-  font-size: 16px;
-  letter-spacing: -0.02em;
+.problem-main strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.problem-main span,
-.problem-limit span,
-.problem-rate small {
-  color: var(--ink-soft);
+.problem-item:hover .problem-main strong {
+  color: var(--brand);
+}
+
+.problem-main > span {
+  font-size: 10px;
+  color: #95a0b1;
+}
+
+.problem-main b {
+  font-weight: 400;
+  margin: 0 5px;
+  color: #b8c2d1;
 }
 
 .problem-tags {
   display: flex;
+  gap: 5px;
   flex-wrap: wrap;
-  gap: 8px;
+  min-width: 0;
 }
 
-.workspace-pagination {
-  justify-content: flex-end;
+.problem-tags .mini-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  padding: 3px 7px;
 }
 
-.workspace-secondary {
-  gap: 16px;
-  position: sticky;
-  top: 88px;
-}
-
-.workspace-panel {
+.problem-rate {
   display: grid;
-  gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: var(--shadow-sm);
+  gap: 6px;
+  justify-items: end;
 }
 
-.panel-head {
-  display: grid;
-  gap: 2px;
+.problem-rate strong {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.filter-summary {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-}
-
-.filter-summary div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(15, 23, 40, 0.08);
-}
-
-.filter-summary div:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-.filter-summary dt {
+.problem-rate small {
+  font-size: 10px;
   color: var(--ink-faint);
+  margin-left: 1px;
 }
 
-.filter-summary dd {
-  margin: 0;
-  text-align: right;
-  font-weight: 700;
+.rate-track {
+  width: 58px;
+  height: 3px;
+  background: #edf0f6;
+  border-radius: 3px;
+  overflow: hidden;
 }
 
-.panel-tags {
-  gap: 8px;
+.rate-track i {
+  display: block;
+  height: 100%;
+  background: #84b7a3;
 }
 
-.panel-tag {
-  padding-inline: 12px;
-}
-
-.featured-list {
-  display: grid;
+.explorer-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
 }
 
-.featured-problem {
+.explorer-footer > span {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
+.workspace-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+.assistant-card {
+  border-radius: 14px;
+  border: 1px solid #dfe7fc;
+  padding: 24px;
+  background: linear-gradient(145deg, #eef3ff, #f9fbff);
+}
+
+.assistant-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  color: var(--brand);
+  background: white;
+  border: 1px solid #e0e7fb;
+  margin-bottom: 20px;
+}
+
+.assistant-icon .app-icon {
+  width: 23px;
+  height: 23px;
+}
+
+.sidebar-kicker {
+  font-size: 7px;
+  color: #899ac1;
+  letter-spacing: 1.3px;
+}
+
+.assistant-card h3 {
+  margin: 10px 0;
+  font-size: 22px;
+  line-height: 1.5;
+  font-weight: 650;
+  letter-spacing: .3px;
+}
+
+.assistant-card p, .sidebar-card p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+}
+
+.assistant-note {
+  display: block;
+  text-align: center;
+  font-size: 10px;
+  color: #9aa9c4;
+  margin-top: 10px;
+}
+
+.sidebar-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  background: white;
+}
+
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sidebar-title .app-icon {
+  width: 18px;
+  height: 18px;
+  color: #ba8d3b;
+}
+
+.sidebar-title h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sidebar-card p {
+  margin-bottom: 14px;
+}
+
+.sidebar-link {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: rgba(245, 248, 255, 0.92);
-  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.featured-problem:hover {
-  transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow: var(--shadow-sm);
+.sidebar-link .app-icon {
+  width: 16px;
+  height: 16px;
 }
 
-.featured-problem div {
-  display: grid;
-  gap: 4px;
+.practice-note {
+  padding: 8px 12px;
 }
 
-.featured-problem strong {
-  font-size: 15px;
-  letter-spacing: -0.02em;
+.note-number {
+  font-size: 8px;
+  letter-spacing: 1.7px;
+  color: #97a2b5;
 }
 
-.featured-problem span {
-  color: var(--ink-soft);
+.practice-note p {
+  color: #8793a7;
+  font-size: 11px;
+  line-height: 2;
+  margin: 10px 0;
+}
+
+.practice-note > span:last-child {
+  font-family: Georgia, serif;
+  font-style: italic;
   font-size: 13px;
+  color: #9aa5b8;
 }
 
-.featured-link {
-  font-weight: 800;
-  color: var(--brand-deep);
-  white-space: nowrap;
+.table-skeleton {
+  padding: 0 24px;
 }
 
-@media (max-width: 1180px) {
-  .workspace-masthead,
-  .workspace-grid,
-  .explorer-toolbar {
-    grid-template-columns: 1fr;
-  }
+.skeleton-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 70px;
+  gap: 28px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
 
-  .workspace-secondary {
-    position: static;
-  }
+.skeleton-row span {
+  height: 12px;
+  border-radius: 4px;
+  background: #edf1f8;
+  animation: pulse 1.4s ease-in-out infinite;
+}
 
-  .explorer-summary {
-    justify-items: start;
+.skeleton-row span:nth-child(2) {
+  width: 70%;
+}
+
+.problem-explorer .empty-state {
+  border: 0;
+  border-radius: 0;
+  min-height: 280px;
+}
+
+.empty-state > .app-icon {
+  width: 30px;
+  height: 30px;
+  color: #9cacc9;
+}
+
+.tags-error {
+  padding: 0 24px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.tags-error button {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: .45;
   }
 }
 
-@media (max-width: 860px) {
-  .workspace-overview {
-    grid-template-columns: 1fr 1fr;
+@media (max-width: 1150px) {
+  .practice-hero {
+    grid-template-columns: 1fr 330px;
+    padding: 30px;
   }
-
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1fr) 236px;
+    gap: 16px;
+  }
   .problem-row {
-    grid-template-columns: 90px 1fr;
+    grid-template-columns: 78px minmax(0, 1fr) 110px 65px;
+    gap: 12px;
   }
-
-  .problem-head {
+  .overview-item {
+    padding: 18px 14px;
+  }
+  .overview-item small {
     display: none;
   }
-
-  .problem-row > :nth-child(3),
-  .problem-row > :nth-child(4),
-  .problem-row > :nth-child(5) {
-    grid-column: 2 / -1;
+  .assistant-card {
+    padding: 20px;
   }
 }
 
-@media (max-width: 640px) {
-  .workspace-masthead {
-    padding: 20px;
+@media (max-width: 940px) {
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-
-  .workspace-copy h1 {
-    font-size: 34px;
+  .workspace-sidebar {
+    grid-template-columns: 1fr 1fr;
   }
+  .assistant-card h3 br {
+    display: none;
+  }
+  .practice-note {
+    display: none;
+  }
+  .assistant-card .assistant-icon {
+    margin-bottom: 10px;
+  }
+  .assistant-card .btn {
+    width: fit-content;
+  }
+  .assistant-note {
+    text-align: left;
+  }
+  .algorithm-art {
+    padding: 0;
+  }
+  .hero-copy p {
+    max-width: 340px;
+  }
+  .overview-item {
+    gap: 10px;
+  }
+  .stat-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .stat-icon .app-icon {
+    width: 17px;
+    height: 17px;
+  }
+}
 
-  .workspace-overview,
-  .toolbar-stats {
+@media (max-width: 680px) {
+  .practice-hero {
     grid-template-columns: 1fr;
+    padding: 28px 24px;
+  }
+  .algorithm-art {
+    display: none;
+  }
+  .hero-copy h1 {
+    font-size: 32px;
+  }
+  .hero-copy p {
+    max-width: none;
+  }
+  .overview-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .overview-item {
+    padding: 16px;
+  }
+  .workspace-sidebar {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-card, .practice-note {
+    display: none;
+  }
+  .assistant-card h3 {
+    font-size: 20px;
+  }
+  .workspace-heading .heading-caption {
+    display: none;
+  }
+  .problem-row {
+    grid-template-columns: 60px minmax(0, 1fr) 55px;
+    padding: 16px;
+    gap: 12px;
+  }
+  .problem-head > :nth-child(3), .problem-tags {
+    display: none;
+  }
+  .problem-id {
+    gap: 6px;
+  }
+  .problem-main > span {
+    font-size: 9px;
+  }
+  .problem-main b {
+    margin: 0 2px;
+  }
+  .explorer-head {
+    padding: 20px 16px 0;
+  }
+  .search-bar {
+    margin-inline: 16px;
+  }
+  .filter-strip {
+    padding-inline: 16px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .filter-strip .tag-toggle {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .search-bar input {
+    font-size: 16px;
+  }
+  .explorer-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+  .table-skeleton {
+    padding-inline: 16px;
   }
 }
 </style>

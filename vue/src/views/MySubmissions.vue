@@ -6,7 +6,7 @@
         <div class="page-title">
           <div>
             <h1>我的提交</h1>
-            <p class="page-subtitle">按状态筛选个人提交记录，查看每次判题的结果入口与基础元数据。</p>
+            <p class="page-subtitle">回顾每次尝试，查看判题结果，找到下一次优化的方向。</p>
           </div>
         </div>
       </div>
@@ -21,8 +21,14 @@
       <span class="spinner spinner-dark"></span>
     </section>
 
+    <section v-else-if="error" class="empty-state" role="alert">
+      <strong>提交记录暂时无法加载</strong>
+      <span class="muted">{{ error }}</span>
+      <button class="btn btn-outline" @click="fetchItems">重新加载</button>
+    </section>
+
     <template v-else>
-      <section v-if="filteredItems.length" class="stack">
+      <section class="stack">
         <div class="glass-panel submissions-toolbar">
           <div class="cluster">
             <button
@@ -38,7 +44,7 @@
           <span class="muted">第 {{ page }} / {{ totalPages }} 页</span>
         </div>
 
-        <section class="card submission-table">
+        <section v-if="filteredItems.length" class="card submission-table">
           <div class="submission-row submission-head">
             <span>提交</span>
             <span>题目</span>
@@ -79,11 +85,10 @@
           </button>
           <button class="page-chip" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
         </div>
-      </section>
-
-      <section v-else class="empty-state">
-        <strong>还没有提交记录</strong>
-        <span class="muted">从题库选择一道题，提交第一份代码后这里就会开始累积数据。</span>
+        <section v-if="!filteredItems.length" class="empty-state">
+          <strong>{{ items.length ? '当前页没有该状态的提交' : '还没有提交记录' }}</strong>
+          <span class="muted">{{ items.length ? '切换上方状态或翻页查看其他记录。' : '从题库选择一道题，开始你的第一次提交。' }}</span>
+        </section>
       </section>
     </template>
   </div>
@@ -91,13 +96,14 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getMySubmissions } from '../api'
+import { getMySubmissions, getErrorMessage } from '../api'
 
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
 const limit = ref(12)
 const loading = ref(true)
+const error = ref('')
 const statusFilter = ref('ALL')
 
 const filters = [
@@ -142,11 +148,14 @@ function formatTime(value) {
 
 async function fetchItems() {
   loading.value = true
+  error.value = ''
 
   try {
     const data = await getMySubmissions({ page: page.value, limit: limit.value })
     items.value = data.items
     total.value = data.total
+  } catch (requestError) {
+    error.value = getErrorMessage(requestError, '请检查网络连接后重试。')
   } finally {
     loading.value = false
   }
@@ -233,10 +242,9 @@ onMounted(fetchItems)
 
 .status-pill {
   width: fit-content;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, 0.12);
-  font-weight: 800;
+  padding: 5px 9px;
+  border-radius: 5px;
+  font-weight: 650;
 }
 
 @media (max-width: 980px) {
@@ -244,28 +252,35 @@ onMounted(fetchItems)
     flex-direction: column;
     align-items: start;
   }
-
   .hero-summary {
     justify-items: start;
   }
-
   .submissions-toolbar {
     flex-direction: column;
     align-items: flex-start;
   }
-
   .submission-row {
-    grid-template-columns: 90px 1fr;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    gap: 8px;
   }
-
   .submission-head {
     display: none;
   }
-
-  .submission-row > :nth-child(3),
-  .submission-row > :nth-child(4),
+  .submission-row > :nth-child(2) {
+    grid-column: 2 / -1;
+  }
+  .submission-row > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+  .submission-row > :nth-child(4) {
+    grid-column: 3;
+    grid-row: 2;
+  }
   .submission-row > :nth-child(5) {
     grid-column: 2 / -1;
+    font-size: 11px;
   }
 }
 </style>

@@ -12,14 +12,14 @@
           <div class="page-title">
             <div>
               <h1>{{ submission.status }}</h1>
-              <p class="page-subtitle">查看本次提交的代码、判题输出和基础运行指标。</p>
+              <p class="page-subtitle">回顾这次解法，查看运行结果与资源消耗。</p>
             </div>
           </div>
           <div class="cluster">
             <span class="pill">题目 #{{ submission.problemId }}</span>
             <span class="pill">{{ submission.language.toUpperCase() }}</span>
-            <span class="pill">CPU {{ submission.timeCost }} ms</span>
-            <span class="pill">Memory {{ submission.memoryCost }} KB</span>
+            <span class="pill">耗时 {{ submission.timeCost }} ms</span>
+            <span class="pill">内存 {{ submission.memoryCost }} KB</span>
           </div>
         </div>
         <router-link to="/my-submissions" class="btn btn-outline">返回提交列表</router-link>
@@ -30,7 +30,7 @@
           <div class="section-title">
             <h2>提交代码</h2>
           </div>
-          <pre class="code-view mono">{{ submission.code || '后端没有返回代码内容。' }}</pre>
+          <pre class="code-view mono">{{ submission.code || '暂无代码内容。' }}</pre>
         </article>
 
         <article class="card stack">
@@ -208,7 +208,7 @@ onUnmounted(() => {
 .output-view {
   margin: 0;
   padding: 18px;
-  border-radius: 18px;
+  border-radius: var(--radius-sm);
   background: var(--surface-dark);
   color: #eef4ff;
   overflow: auto;
@@ -225,7 +225,6 @@ onUnmounted(() => {
   .detail-grid {
     grid-template-columns: 1fr;
   }
-
   .submission-hero {
     flex-direction: column;
   }

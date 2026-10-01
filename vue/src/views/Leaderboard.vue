@@ -5,8 +5,8 @@
         <span class="eyebrow">Leaderboard</span>
         <div class="page-title">
           <div>
-            <h1>全站排行榜</h1>
-            <p class="page-subtitle">展示 Top 50 选手积分，并为登录用户显示自己的实时排名和当前分数。</p>
+            <h1>算法荣誉榜</h1>
+            <p class="page-subtitle">每一道通过的题目，都是积累的实力。与大家一起，在练习中不断进阶。</p>
           </div>
         </div>
       </div>
@@ -23,6 +23,7 @@
       <span class="spinner spinner-dark"></span>
     </section>
 
+    <section v-else-if="error" class="empty-state" role="alert"><strong>排行榜暂时无法加载</strong><span class="muted">{{ error }}</span><button class="btn btn-outline" @click="loadBoard">重试</button></section>
     <template v-else>
       <section v-if="podium.length" class="podium-grid">
         <article v-for="entry in podium" :key="entry.userId" class="podium-card" :class="`rank-${entry.rank}`">
@@ -57,7 +58,7 @@
 
       <section v-if="!top50.length" class="empty-state">
         <strong>榜单暂时为空</strong>
-        <span class="muted">先完成几次有效提交，让排行榜真正跑起来。</span>
+        <span class="muted">完成你的第一道题，让努力出现在这里。</span>
       </section>
     </template>
   </div>
@@ -65,10 +66,11 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getLeaderboard } from '../api'
+import { getLeaderboard, getErrorMessage } from '../api'
 import { store } from '../store'
 
 const loading = ref(true)
+const error = ref('')
 const top50 = ref([])
 const myRank = ref(-1)
 const myScore = ref(0)
@@ -76,90 +78,149 @@ const myScore = ref(0)
 const podium = computed(() => top50.value.slice(0, 3))
 const restOfBoard = computed(() => top50.value.slice(3))
 
-onMounted(async () => {
+async function loadBoard() {
+  loading.value = true
+  error.value = ''
   try {
     const data = await getLeaderboard()
     top50.value = data.top50
     myRank.value = data.myRank
     myScore.value = data.myScore
+  } catch (requestError) {
+    error.value = getErrorMessage(requestError, '请检查网络连接后重试。')
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(loadBoard)
 </script>
 
 <style scoped>
 .leaderboard-hero {
   display: flex;
   justify-content: space-between;
-  align-items: end;
-  gap: 18px;
+  align-items: center;
+  gap: 24px;
+  background: #142440;
+  border-color: #243957;
+  color: white;
+  padding: 34px;
+}
+
+.leaderboard-hero .eyebrow {
+  color: #a9bcdf;
+}
+
+.leaderboard-hero .page-subtitle {
+  color: #9fafc9;
+  max-width: 560px;
 }
 
 .hero-rank {
   display: grid;
   gap: 6px;
-  justify-items: end;
   text-align: right;
+  padding: 18px 22px;
+  border-radius: 10px;
+  background: #ffffff08;
+  border: 1px solid #ffffff12;
 }
 
 .hero-rank strong {
-  font-size: 22px;
-  letter-spacing: -0.03em;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .hero-rank span {
-  color: var(--ink-soft);
+  font-size: 12px;
+  color: #b3efcd;
 }
 
 .podium-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .podium-card {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   justify-items: center;
   text-align: center;
   padding: 24px;
   border: 1px solid var(--line);
-  border-radius: 26px;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  background: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.podium-card::before {
+  content: '';
+  position: absolute;
+  height: 3px;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #c7d0e0;
 }
 
 .podium-card.rank-1 {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(255, 255, 255, 0.8));
+  background: linear-gradient(180deg, #fffcf3, white);
+  border-color: #eee3c6;
 }
 
-.podium-card.rank-2 {
-  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.8));
+.podium-card.rank-1::before {
+  background: #d6b366;
 }
 
-.podium-card.rank-3 {
-  background: linear-gradient(135deg, rgba(217, 119, 6, 0.12), rgba(255, 255, 255, 0.8));
+.podium-card.rank-3::before {
+  background: #c99c89;
 }
 
 .podium-rank {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--brand-deep);
-  letter-spacing: 0.08em;
+  font-size: 9px;
+  font-weight: 700;
+  color: #8a97ad;
+  letter-spacing: 2px;
 }
 
-.podium-avatar,
-.user-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.rank-1 .podium-rank {
+  color: #b78d39;
+}
+
+.podium-avatar {
+  display: grid;
+  place-items: center;
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand), var(--accent));
-  color: #f8fbff;
+  background: #eff3fb;
+  color: #7284a5;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 650;
+  margin: 6px 0;
+}
+
+.rank-1 .podium-avatar {
+  background: #f4e9cb;
+  color: #b08735;
+}
+
+.rank-3 .podium-avatar {
+  background: #f9efea;
+  color: #b1826d;
+}
+
+.podium-card > strong {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.podium-card > span:last-child {
+  color: var(--ink-faint);
+  font: 12px Consolas, monospace;
 }
 
 .board-table {
@@ -169,10 +230,10 @@ onMounted(async () => {
 
 .board-row {
   display: grid;
-  grid-template-columns: 120px 1fr 100px;
+  grid-template-columns: 100px minmax(0, 1fr) 100px;
   gap: 16px;
   align-items: center;
-  padding: 16px 20px;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -181,40 +242,94 @@ onMounted(async () => {
 }
 
 .board-head {
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
   color: var(--ink-faint);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  background: #f9fafd;
 }
 
 .board-row.current {
-  background: rgba(37, 99, 235, 0.06);
+  background: var(--surface-tint);
+}
+
+.rank-col {
+  font: 12px Consolas, monospace;
+  color: var(--ink-faint);
 }
 
 .user-col {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.user-col strong {
+  overflow-wrap: anywhere;
+}
+
+.user-badge {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #f0f3fa;
+  color: #788ba9;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .score-col {
-  font-weight: 800;
+  text-align: right;
+  font: 600 13px Consolas, monospace;
 }
 
-@media (max-width: 720px) {
+.board-head > span:last-child {
+  text-align: right;
+}
+
+@media (max-width: 760px) {
   .leaderboard-hero {
     flex-direction: column;
-    align-items: start;
+    align-items: flex-start;
+    padding: 24px;
   }
-
   .hero-rank {
-    justify-items: start;
     text-align: left;
+    width: 100%;
   }
-
+  .podium-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .podium-card {
+    display: flex;
+    text-align: left;
+    padding: 16px;
+    gap: 14px;
+  }
+  .podium-avatar {
+    width: 38px;
+    height: 38px;
+    margin: 0;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+  .podium-rank {
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .podium-card > strong {
+    flex: 1;
+    font-size: 14px;
+  }
+  .podium-card > span:last-child {
+    flex-shrink: 0;
+  }
   .board-row {
-    grid-template-columns: 80px 1fr 72px;
+    grid-template-columns: 50px minmax(0, 1fr) 50px;
+    gap: 10px;
     padding: 14px 16px;
   }
 }
