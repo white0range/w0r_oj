@@ -22,6 +22,11 @@
           Go API · Redis Queue · Docker Sandbox · Elasticsearch · Python Agent · Vue Console
         </div>
       </div>
+      <div class="footer-filing">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+          鲁ICP备2026058391号-1
+        </a>
+      </div>
     </footer>
   </div>
 </template>
