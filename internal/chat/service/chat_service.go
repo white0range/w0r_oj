@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -500,14 +501,17 @@ func (s *ChatService) SendChatMessage(ctx context.Context, userID uint, sessionI
 		return nil, err
 	}
 
+	log.Printf("[chat] turn_id=%d stage=created", turn.ID)
 	queueTask := dto.ChatTurnQueueTask{TurnID: turn.ID}
 	taskBytes, err := json.Marshal(queueTask)
 	if err != nil {
 		return nil, err
 	}
 	if err := repo.PushTurnToQueue(ctx, taskBytes); err != nil {
+		log.Printf("[chat] turn_id=%d stage=queue_failed error=%v", turn.ID, err)
 		return nil, err
 	}
+	log.Printf("[chat] turn_id=%d stage=queued", turn.ID)
 
 	return turn, nil
 }

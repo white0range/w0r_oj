@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 class ChatMessage(BaseModel):
@@ -5,12 +6,15 @@ class ChatMessage(BaseModel):
     content: str = ""
 
 class ChatRequest(BaseModel):
-    user_id: int
+    turn_id: int = Field(gt=0)
+    processing_token: str = Field(min_length=64, max_length=64, repr=False)
+    user_id: int = Field(gt=0)
     goal: str = ""
     session_summary: str = ""
     messages: list[ChatMessage] = Field(default_factory=list)
 
 class SessionSummaryRequest(BaseModel):
+    turn_id: int = Field(gt=0)
     existing_summary: str = ""
     messages: list[ChatMessage] = Field(default_factory=list)
 
@@ -28,6 +32,13 @@ class ChatResult(BaseModel):
 class ChatResponse(BaseModel):
     message: str
     result: ChatResult
+
+class ChatMemorySyncRequest(BaseModel):
+    turn_id: int = Field(gt=0)
+    user_id: int = Field(gt=0)
+    query_text: str
+    result: ChatResult
+    finished_at: datetime
 
 class SessionSummaryResponse(BaseModel):
     message: str

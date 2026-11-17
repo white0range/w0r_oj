@@ -28,10 +28,15 @@ type Producer interface {
 	EnqueueUserScoreSync(ctx context.Context, userID uint) error
 }
 
+type ChatMemoryProducer interface {
+	EnqueueChatMemorySync(ctx context.Context, turnID uint) error
+}
+
 type Manager struct {
 	queue       *queue
 	problemRepo repository.ProblemRepository
 	handlers    map[Target]handler
+	memories    chatMemoryStore
 	workers     sync.WaitGroup
 }
 
@@ -48,6 +53,8 @@ func NewManager(problemRepo repository.ProblemRepository, searchRepo repository.
 	manager.handlers[TargetES] = &esHandler{problems: problemRepo, search: searchRepo}
 	manager.handlers[TargetRAG] = &ragHandler{}
 	manager.handlers[TargetLeaderboard] = &leaderboardHandler{}
+	manager.memories = &mysqlChatMemoryStore{}
+	manager.handlers[TargetChatMemory] = &chatMemoryHandler{store: manager.memories}
 	return manager
 }
 
@@ -56,7 +63,7 @@ func (m *Manager) Start(ctx context.Context) {
 		log.Printf("recover expired sync tasks at startup failed: %v", err)
 	}
 
-	m.workers.Add(workerCount + 3)
+	m.workers.Add(workerCount + 4)
 	for i := 0; i < workerCount; i++ {
 		workerID := i + 1
 		go func() {
@@ -75,6 +82,10 @@ func (m *Manager) Start(ctx context.Context) {
 	go func() {
 		defer m.workers.Done()
 		m.runReconciler(ctx)
+	}()
+	go func() {
+		defer m.workers.Done()
+		m.runChatMemoryDispatcher(ctx)
 	}()
 
 	if err := m.enqueueLeaderboardReconcile(ctx); err != nil {
@@ -188,6 +199,9 @@ func (m *Manager) process(ctx context.Context, raw string) {
 func (m *Manager) handleFailure(ctx context.Context, raw string, task Task, cause error) {
 	task.RetryCount++
 	task.LastError = truncateError(cause)
+	if task.Target == TargetChatMemory {
+		log.Printf("[chat] turn_id=%d stage=memory_sync_failed task_id=%s retry_count=%d error=%v", task.EntityID, task.ID, task.RetryCount, cause)
+	}
 	if task.RetryCount > maxRetryCount {
 		log.Printf("sync task %s exhausted retries: %v", task.ID, cause)
 		if err := m.queue.deadLetter(ctx, raw, task); err != nil {

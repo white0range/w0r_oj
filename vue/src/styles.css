@@ -153,10 +153,21 @@ h1, h2, h3 {
 }
 
 .footer-filing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 16px;
   font-size: 12px;
   color: var(--ink-faint);
   text-align: center;
   padding-top: 8px;
+}
+
+.footer-filing a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .skip-link {

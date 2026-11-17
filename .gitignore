@@ -33,6 +33,7 @@ vue/dist/
 # Python bytecode cache
 __pycache__/
 *.py[cod]
+.venv/
 
 # local environment variables
 .env

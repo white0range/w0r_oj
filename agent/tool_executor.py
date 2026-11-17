@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from client import (
+    AgentToolAuth,
+    require_active_execution,
     get_candidate_problems,
     get_failed_submission_detail,
     get_user_ac_history,
@@ -279,19 +281,19 @@ def _rerank_hybrid_candidates(query: str, items: list[dict], limit: int) -> list
     return ranked[:limit]
 
 
-def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionContext, bound_user_id: int) -> dict:
+def execute_tool(name: str, arguments: dict, auth: AgentToolAuth, context: ToolExecutionContext) -> dict:
+    require_active_execution(auth)
     debug_enabled = _is_debug_enabled()
 
     if debug_enabled:
-        print(f"[tool-exec] {name} arguments={arguments}")
+        print(f"[tool-exec] turn_id={auth.turn_id} tool={name}")
 
     if name == "user_ac_history":
-        return get_user_ac_history(bound_user_id, token)
+        return get_user_ac_history(auth)
 
     if name == "user_failed_submissions":
         return get_user_failed_submissions(
-            bound_user_id,
-            token,
+            auth,
             limit=arguments.get("limit", 10),
         )
 
@@ -307,12 +309,12 @@ def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionC
                 "message": "failed submission detail limit reached; use the existing contexts to finish the analysis",
                 "data": None,
             }
-        result = get_failed_submission_detail(bound_user_id, submission_id, token)
+        result = get_failed_submission_detail(submission_id, auth)
         context.failure_detail_results[submission_id] = result
         return result
 
     if name == "user_tag_stats":
-        return get_user_tag_stats(bound_user_id, token)
+        return get_user_tag_stats(auth)
 
     if name == "candidate_problems":
         request_key = json.dumps(
@@ -327,7 +329,7 @@ def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionC
 
         if context.rule_candidate_calls == 0:
             result = get_candidate_problems(
-                token,
+                auth,
                 tags=arguments.get("tags", []),
                 exclude_ids=arguments.get("exclude_ids", []),
                 limit=arguments.get("limit", 10),
@@ -406,7 +408,7 @@ def execute_tool(name: str, arguments: dict, token: str, context: ToolExecutionC
             semantic_items: list[dict[str, Any]] = []
             warnings: list[str] = []
             for query in variants[:2]:
-                lexical_payload = search_problems(token, keyword=query)
+                lexical_payload = search_problems(auth, keyword=query)
                 lexical_items.extend(_normalize_lexical_candidates(lexical_payload, exclude_ids)["data"]["items"])
 
             for query in variants:

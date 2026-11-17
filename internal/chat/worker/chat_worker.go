@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,15 +18,11 @@ import (
 
 	"gojo/config"
 	"gojo/infrastructure/cache"
-	"gojo/infrastructure/mysql"
 	"gojo/internal/chat/dto"
 	"gojo/internal/chat/model"
 	"gojo/internal/chat/repository"
 	chatService "gojo/internal/chat/service"
-	userModel "gojo/internal/user/model"
-	jwtPkg "gojo/pkg/jwt"
-
-	"gorm.io/gorm"
+	"gojo/internal/syncer"
 )
 
 type chatAgentMessage struct {
@@ -34,10 +31,12 @@ type chatAgentMessage struct {
 }
 
 type chatAgentRequest struct {
-	UserID         uint               `json:"user_id"`
-	Goal           string             `json:"goal"`
-	SessionSummary string             `json:"session_summary,omitempty"`
-	Messages       []chatAgentMessage `json:"messages,omitempty"`
+	TurnID          uint               `json:"turn_id"`
+	ProcessingToken string             `json:"processing_token"`
+	UserID          uint               `json:"user_id"`
+	Goal            string             `json:"goal"`
+	SessionSummary  string             `json:"session_summary,omitempty"`
+	Messages        []chatAgentMessage `json:"messages,omitempty"`
 }
 
 type chatAgentResponse struct {
@@ -46,6 +45,7 @@ type chatAgentResponse struct {
 }
 
 type sessionSummaryRequest struct {
+	TurnID          uint               `json:"turn_id"`
 	ExistingSummary string             `json:"existing_summary,omitempty"`
 	Messages        []chatAgentMessage `json:"messages"`
 }
@@ -59,8 +59,8 @@ type ChatWorker struct {
 	repo         repository.ChatRepository
 	httpClient   *http.Client
 	agentBaseURL string
-	serviceUser  *userModel.User
 	serviceToken string
+	memorySync   syncer.ChatMemoryProducer
 
 	acceptCtx     context.Context
 	stopAccepting context.CancelFunc
@@ -70,12 +70,7 @@ type ChatWorker struct {
 	stopOnce      sync.Once
 }
 
-func NewChatWorker(repo repository.ChatRepository) (*ChatWorker, error) {
-	serviceUser, err := loadChatAgentUser(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("load chat agent user failed: %w", err)
-	}
-
+func NewChatWorker(repo repository.ChatRepository, memorySync syncer.ChatMemoryProducer) (*ChatWorker, error) {
 	timeoutSeconds := config.GlobalConfig.Chat.AgentTimeoutSeconds
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 60
@@ -97,27 +92,9 @@ func NewChatWorker(repo repository.ChatRepository) (*ChatWorker, error) {
 			Timeout: time.Duration(timeoutSeconds) * time.Second,
 		},
 		agentBaseURL: agentBaseURL,
-		serviceUser:  serviceUser,
 		serviceToken: serviceToken,
+		memorySync:   memorySync,
 	}, nil
-}
-
-func loadChatAgentUser(ctx context.Context) (*userModel.User, error) {
-	var user userModel.User
-	err := mysql.DB.WithContext(ctx).
-		Where("role = ? AND status = ?", 1, userModel.UserStatusActive).
-		Order("id asc").
-		First(&user).Error
-	if err == nil {
-		if user.TokenVersion <= 0 {
-			return nil, fmt.Errorf("admin user %d has invalid token_version=%d", user.ID, user.TokenVersion)
-		}
-		return &user, nil
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("no active admin user found; please create or enable an admin account first")
-	}
-	return nil, err
 }
 
 func (w *ChatWorker) callchatAgentWithPayload(ctx context.Context, reqBody chatAgentRequest) (string, error) {
@@ -138,8 +115,9 @@ func (w *ChatWorker) callchatAgentWithPayload(ctx context.Context, reqBody chatA
 	return string(agentResp.Result), nil
 }
 
-func (w *ChatWorker) summarizeSessionMessages(ctx context.Context, existingSummary string, messages []chatAgentMessage) (string, error) {
+func (w *ChatWorker) summarizeSessionMessages(ctx context.Context, turnID uint, existingSummary string, messages []chatAgentMessage) (string, error) {
 	respBody, err := w.postAgentJSON(ctx, "/chat/summarize-session", sessionSummaryRequest{
+		TurnID:          turnID,
 		ExistingSummary: existingSummary,
 		Messages:        messages,
 	})
@@ -160,11 +138,6 @@ func (w *ChatWorker) summarizeSessionMessages(ctx context.Context, existingSumma
 }
 
 func (w *ChatWorker) postAgentJSON(ctx context.Context, path string, payload any) ([]byte, error) {
-	agentToken, err := jwtPkg.GenerateToken(w.serviceUser)
-	if err != nil {
-		return nil, fmt.Errorf("generate chat agent token failed: %w", err)
-	}
-
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal chat agent request failed: %w", err)
@@ -181,7 +154,6 @@ func (w *ChatWorker) postAgentJSON(ctx context.Context, path string, payload any
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+agentToken)
 	req.Header.Set("X-Agent-Service-Token", w.serviceToken)
 
 	resp, err := w.httpClient.Do(req)
@@ -196,7 +168,8 @@ func (w *ChatWorker) postAgentJSON(ctx context.Context, path string, payload any
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("chat agent returned status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		// Validation responses can echo request inputs, including the execution token.
+		return nil, fmt.Errorf("chat agent returned status=%d", resp.StatusCode)
 	}
 
 	return respBody, nil
@@ -297,16 +270,21 @@ func (w *ChatWorker) ProcessTurn(ctx context.Context, turnID uint) error {
 		return nil
 	}
 
+	attemptHash := sha256.Sum256([]byte(processingToken))
+	attemptID := hex.EncodeToString(attemptHash[:12])
+	log.Printf("[chat] turn_id=%d attempt_id=%s stage=execution_start", turn.ID, attemptID)
 	processCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go w.renewTurnLease(processCtx, cancel, repo, turnID, processingToken)
 
 	fail := func(cause error) error {
+		log.Printf("[chat] turn_id=%d attempt_id=%s stage=execution_failed error=%v", turn.ID, attemptID, cause)
 		failed, failErr := repo.FailClaimedTurn(context.Background(), turnID, processingToken, cause.Error(), time.Now())
 		if failErr != nil {
 			return fmt.Errorf("%w; mark chat turn failed: %v", cause, failErr)
 		}
 		if !failed {
+			log.Printf("[chat] turn_id=%d attempt_id=%s stage=superseded", turn.ID, attemptID)
 			return fmt.Errorf("%w; chat turn claim was lost", cause)
 		}
 		return cause
@@ -318,9 +296,9 @@ func (w *ChatWorker) ProcessTurn(ctx context.Context, turnID uint) error {
 	}
 
 	if len(archivedChunk) > 0 {
-		mergedSummary, summaryErr := w.summarizeSessionMessages(processCtx, session.SummaryText, toAgentMessages(archivedChunk))
+		mergedSummary, summaryErr := w.summarizeSessionMessages(processCtx, turn.ID, session.SummaryText, toAgentMessages(archivedChunk))
 		if summaryErr != nil {
-			log.Printf("chat turn %d llm session summary failed, fallback to rule summary: %v", turn.ID, summaryErr)
+			log.Printf("[chat] turn_id=%d stage=summary_fallback error=%v", turn.ID, summaryErr)
 			mergedSummary = repository.BuildCompactSessionSummary(session.SummaryText, archivedChunk)
 		}
 
@@ -336,20 +314,35 @@ func (w *ChatWorker) ProcessTurn(ctx context.Context, turnID uint) error {
 	}
 
 	payload := chatAgentRequest{
-		UserID:         turn.UserID,
-		SessionSummary: strings.TrimSpace(session.SummaryText),
-		Messages:       toAgentMessages(messages),
+		TurnID:          turn.ID,
+		ProcessingToken: processingToken,
+		UserID:          turn.UserID,
+		SessionSummary:  strings.TrimSpace(session.SummaryText),
+		Messages:        toAgentMessages(messages),
 	}
+	log.Printf("[chat] turn_id=%d attempt_id=%s stage=agent_start", turn.ID, attemptID)
+	agentStarted := time.Now()
 	resultJSON, err := w.callchatAgentWithPayload(processCtx, payload)
 	if err != nil {
 		return fail(fmt.Errorf("call chat agent failed: %w", err))
 	}
 
+	log.Printf("[chat] turn_id=%d attempt_id=%s stage=agent_done duration_ms=%d", turn.ID, attemptID, time.Since(agentStarted).Milliseconds())
 	assistantContent := chatService.FormatChatAssistantContentForWorker(resultJSON)
 	if _, completed, err := repo.CompleteClaimedTurn(processCtx, turn.ID, processingToken, assistantContent, resultJSON, time.Now()); err != nil {
 		return fail(fmt.Errorf("complete chat turn failed: %w", err))
 	} else if !completed {
+		log.Printf("[chat] turn_id=%d attempt_id=%s stage=superseded", turn.ID, attemptID)
 		return nil
+	}
+	log.Printf("[chat] turn_id=%d attempt_id=%s stage=completed", turn.ID, attemptID)
+	if w.memorySync != nil {
+		if err := w.memorySync.EnqueueChatMemorySync(processCtx, turn.ID); err != nil {
+			// The pending flag was committed with the result; the dispatcher will recover it.
+			log.Printf("[chat] turn_id=%d stage=memory_queue_failed error=%v", turn.ID, err)
+		} else {
+			log.Printf("[chat] turn_id=%d stage=memory_queued", turn.ID)
+		}
 	}
 
 	return nil
@@ -373,7 +366,7 @@ func (w *ChatWorker) renewTurnLease(ctx context.Context, cancel context.CancelFu
 		case <-ticker.C:
 			renewed, err := repo.RenewTurnLease(context.Background(), turnID, processingToken, time.Now().Add(chatTurnLeaseDuration))
 			if err != nil || !renewed {
-				log.Printf("chat turn %d lease renewal failed: %v", turnID, err)
+				log.Printf("[chat] turn_id=%d stage=lease_renewal_failed error=%v", turnID, err)
 				cancel()
 				return
 			}
@@ -431,9 +424,9 @@ func (w *ChatWorker) runTurnWorker(acceptCtx, taskCtx context.Context, id int) {
 			continue
 		}
 
-		log.Printf("chat turn worker %d processing turn_id=%d\n", id, task.TurnID)
+		log.Printf("[chat] turn_id=%d stage=worker_received worker_id=%d", task.TurnID, id)
 		if err := w.ProcessTurn(taskCtx, task.TurnID); err != nil {
-			log.Printf("chat turn worker %d process turn failed: %v\n", id, err)
+			log.Printf("[chat] turn_id=%d stage=worker_failed worker_id=%d error=%v", task.TurnID, id, err)
 		}
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		_ = cache.Rdb.LRem(cleanupCtx, repository.ChatTurnProcessingQueueKey, 0, payload).Err()

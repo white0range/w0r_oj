@@ -12,15 +12,17 @@ const (
 	TargetES          Target = "es"
 	TargetRAG         Target = "rag"
 	TargetLeaderboard Target = "leaderboard"
+	TargetChatMemory  Target = "chat_memory"
 )
 
 type Action string
 
 const (
-	ActionProblemUpsert         Action = "problem_upsert"
-	ActionProblemDelete         Action = "problem_delete"
-	ActionUserScoreSync         Action = "user_score_sync"
-	ActionLeaderboardReconcile  Action = "leaderboard_reconcile"
+	ActionProblemUpsert        Action = "problem_upsert"
+	ActionProblemDelete        Action = "problem_delete"
+	ActionUserScoreSync        Action = "user_score_sync"
+	ActionLeaderboardReconcile Action = "leaderboard_reconcile"
+	ActionChatMemorySync       Action = "chat_memory_sync"
 )
 
 type Task struct {

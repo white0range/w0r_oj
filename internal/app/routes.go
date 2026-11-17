@@ -8,6 +8,7 @@ import (
 	"gojo/config"
 	middlewares2 "gojo/internal/app/middlewares"
 	chatHandler "gojo/internal/chat/handler"
+	chatRepository "gojo/internal/chat/repository"
 	leaderboardHandler "gojo/internal/leaderboard/handler"
 	problemHandler "gojo/internal/problem/handler"
 	"gojo/internal/realtime"
@@ -24,6 +25,7 @@ func SetupRouter(
 	tcHandler *problemHandler.TestCaseHandler,
 	searchHandler *problemHandler.SearchHandler,
 	chatHandler *chatHandler.ChatHandler,
+	agentHandler *chatHandler.AgentToolHandler,
 ) *gin.Engine {
 	r := gin.Default()
 	if err := r.SetTrustedProxies(config.GlobalConfig.Server.TrustedProxyCIDRs); err != nil {
@@ -51,6 +53,18 @@ func SetupRouter(
 	r.GET("/api/leaderboard", middlewares2.OptionalAuth(), lHandler.GetGlobalLeaderboard)
 	r.POST("/api/problems/search", middlewares2.SearchRateLimit(), searchHandler.SearchProblems)
 
+	agentGroup := r.Group("/api/agent")
+	agentGroup.Use(middlewares2.AgentAuth(), middlewares2.AgentTurnContext(chatRepository.NewChatRepository()))
+	{
+		agentGroup.GET("/context", agentHandler.GetExecutionContext)
+		agentGroup.GET("/me/ac-history", agentHandler.GetUserACHistory)
+		agentGroup.GET("/me/failed-submissions", agentHandler.GetUserFailedSubmissions)
+		agentGroup.GET("/me/failed-submissions/:submission_id", agentHandler.GetFailedSubmissionDetail)
+		agentGroup.GET("/me/tag-stats", agentHandler.GetUserTagStats)
+		agentGroup.GET("/problems/candidates", agentHandler.GetCandidateProblems)
+		agentGroup.GET("/problems/:id", agentHandler.GetProblemDetail)
+	}
+
 	protected := r.Group("/api")
 	protected.Use(middlewares2.AuthMiddleware())
 	{
@@ -71,13 +85,6 @@ func SetupRouter(
 			adminGroup.POST("/tags", tHandler.CreateTag)
 			adminGroup.DELETE("/tags/:id", tHandler.DeleteTag)
 			adminGroup.PUT("/problems/:id/tags", pHandler.UpdateProblemTags)
-
-			adminGroup.GET("/agent/users/:id/ac-history", chatHandler.GetUserACHistory)
-			adminGroup.GET("/agent/users/:id/failed-submissions", chatHandler.GetUserFailedSubmissions)
-			adminGroup.GET("/agent/users/:id/failed-submissions/:submission_id", chatHandler.GetFailedSubmissionDetail)
-			adminGroup.GET("/agent/users/:id/tag-stats", chatHandler.GetUserTagStats)
-			adminGroup.GET("/agent/problems/candidates", chatHandler.GetCandidateProblems)
-			adminGroup.GET("/agent/problems/:id", chatHandler.GetProblemDetail)
 		}
 
 		protected.GET("/profile", uHandler.GetProfile)

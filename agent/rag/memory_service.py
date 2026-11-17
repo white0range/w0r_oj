@@ -1,7 +1,6 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -85,8 +84,10 @@ def search_user_memories(
 
 def save_chat_memory(
     user_id: int,
+    turn_id: int,
     query_text: str,
     result: ChatResult,
+    created_at: str,
     memory_kind: str = "chat",
     qdrant_url: str = DEFAULT_QDRANT_URL,
     collection_name: str = DEFAULT_MEMORY_COLLECTION,
@@ -96,10 +97,10 @@ def save_chat_memory(
     vector = embed_documents([memory_text])[0]
     ensure_collection(client, collection_name, len(vector))
 
-    point_id = uuid.uuid4().hex
-    created_at = datetime.now(timezone.utc).isoformat()
+    point_id = uuid.uuid5(uuid.NAMESPACE_URL, f"gojo:chat-memory:{user_id}:{turn_id}:{memory_kind}").hex
     payload = {
         "user_id": user_id,
+        "turn_id": turn_id,
         "query_text": query_text,
         "memory_kind": memory_kind,
         "memory_text": memory_text,
@@ -110,5 +111,6 @@ def save_chat_memory(
     client.upsert(
         collection_name=collection_name,
         points=[PointStruct(id=point_id, vector=vector, payload=payload)],
+        wait=True,
     )
     return point_id

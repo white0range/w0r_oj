@@ -157,16 +157,31 @@ Agent 的主要工具：
 }
 ```
 
-Go 端保留最近消息窗口，并将较早消息压缩为 Session Summary；FastAPI 还会从 Qdrant 检索当前用户的长期记忆。长期记忆按 `user_id` 隔离，默认召回 Top 3。
+Go 端保留最近消息窗口，并将较早消息压缩为 Session Summary；FastAPI 还会从 Qdrant 检索当前用户的长期记忆。长期记忆按 `user_id` 隔离，默认召回 Top 3。Python 生成回答时不直接写入记忆；Go 确认结果落库后，复用 Redis 同步队列调用 `/memory/sync`。记忆使用用户、回合和类型生成固定 UUID，同一回合重试时更新同一个点。
 
 ### Agent 工具访问边界
 
-Go 调用 FastAPI 时携带：
+Go 与 FastAPI 使用独立的固定服务密钥鉴权，不再签发或转发管理员 JWT，也不要求存在管理员账号。两个服务之间的请求使用 `X-Agent-Service-Token`，Go 的 `chat.agent_service_token` 与 Python 的 `AGENT_SERVICE_TOKEN` 必须一致。
 
-- `Authorization: Bearer <JWT>`：由 Go 为受控的活动管理员服务账号签发。
-- `X-Agent-Service-Token: <shared-secret>`：Go 与 FastAPI 共享的内部密钥。
+Agent 工具接口独立放在 `/api/agent/*` 下，使用 `AgentAuth` 中间件，不经过用户登录或管理员中间件。Python 回调时还需携带 `X-Agent-Turn-ID` 与 `X-Agent-Processing-Token`；Go 检查回合正在运行、执行租约未过期、执行编号等于当前 `ProcessingToken`、会话仍有效，并从回合记录确定用户身份。用户工具采用 `/api/agent/me/*`，不接受模型指定用户 ID；失败提交详情仍检查提交归属，并拒绝将 AC 提交作为错题分析目标。
 
-FastAPI 回调 Go 的内部 Agent API 时继续携带这两个凭据。工具执行器将用户 ID 强制绑定为原始 Chat 请求中的用户，模型不能通过参数切换用户；失败提交详情接口还会在 Go 端校验提交归属，并拒绝把 AC 提交作为错题分析目标。
+生产 Nginx 对 `/api/agent` 及 `/api/agent/*` 直接返回 404，不转发到 Go。Python 通过 Docker 内网的 `GO_BACKEND_BASE_URL=http://api:8080` 直连 Go；不要将该地址配置为网站域名或网关地址。Nginx 配置打包在 gateway 镜像中，修改后需重新构建并更新 gateway 容器。
+
+`POST /chat/run` 请求必须包含正整数 `turn_id`、`user_id` 和 64 字符的 `processing_token`，由 Go Worker 提供。Python 将执行信息绑定在工具闭包中，不暴露为模型参数；在读取记忆前、模型调用前后及工具调用前校验执行状态。Go 返回 `40302` 表示执行失效，Python 会直接中止并返回 HTTP 409，不交给模型重试。会话摘要和题库向量同步只需要服务密钥，不需要用户 JWT。公共题目搜索仍复用 `/api/problems/search`。
+
+服务密钥具有服务级权限，应只保存在服务端配置中，不能发送给前端。回合编号用于选择业务上下文，复用已有的 `ProcessingToken` 区分重试执行；执行编号不能替代服务密钥，也不进入提示词或普通日志。部署时使用受控内部网络，跨公网调用使用 HTTPS，修改密钥后同步重启 Go 和 Python。
+
+### 记忆同步可靠性
+
+`chat_turns.memory_sync_pending` 与成功结果在同一事务中写入。Go 随后立即投递记忆同步任务；若结果提交后退出或 Redis 入队失败，启动时及每 30 秒的扫描会补发待同步记录。扫描只处理新版本确认成功并设置标记的回合，不回填历史记忆。Redis 按回合去重，防止补发绕过现有重试退避；任务只包含回合 ID，消费者从 MySQL 读取已确认的结果、原始消息和完成时间。Python 确认 Qdrant 写入成功后才清除待同步标记。
+
+超过现有重试上限后进入 `sync:dead_letter`，并保留 `sync:chat_memory:dispatch:<turn_id>` 标记，避免扫描反复重启死信任务。修复外部故障后可从死信中显式重放；不要直接删除正在处理或等待退避的分发标记。具体约定见 `docs/2026-11-17-agent-execution-fencing.md`。
+
+### Agent 执行日志
+
+Go 和 Python 的关键运行信息都带 `turn_id`，直接输出到标准输出，生产由 Docker 收集和轮转。Python 使用 LangChain/LangGraph 回调记录模型、工具的开始、结束、耗时、实际 Token 用量和错误类型，并记录摘要、记忆召回、结果解析与异步记忆同步。重试通过现有 ProcessingToken 的单向摘要 `attempt_id` 区分，原始执行令牌不进入日志。
+
+不需要外部追踪账号、Key、追踪服务器或本地日志脚本。日志不记录提示词、完整对话、源码、工具返回正文或原始异常消息；应用主动关闭框架自动云端追踪。部署与查询方法见 [执行日志说明](docs/2026-11-17-agent-tracing-plan.md)。
 
 ## 缓存与排行榜
 
@@ -223,12 +238,11 @@ FastAPI 回调 Go 的内部 Agent API 时继续携带这两个凭据。工具执
 │   └── user/                  # 双 Token、封禁和用户资料
 ├── migrations/                # 需人工确认执行的历史 SQL
 ├── vue/                       # Vue 用户端和管理后台
-├── docker-compose.yml         # 本地开发中间件与 Agent
+├── docker-compose.yml         # 本地开发前端与数据库、中间件
 ├── docker-compose.prod.yml    # 单机生产服务拓扑
 ├── docker-compose.4g.yml      # 4GB 主机的低内存叠加配置
 ├── .env.example              # 开发环境变量示例
 ├── .env.local-production.example # 生产 Compose 环境变量模板
-├── LOCAL_PRODUCTION.md        # 本机生产模式与 4GB 配置说明
 └── go.mod                     # Go 模块与依赖
 ```
 
@@ -236,130 +250,136 @@ FastAPI 回调 Go 的内部 Agent API 时继续携带这两个凭据。工具执
 
 ### 环境要求
 
-- Go 1.26，以 `go.mod` 为准
-- Node.js 18+ 与 npm
+- Go 1.26 或兼容版本，以 `go.mod` 为准
+- Python 3.11 或兼容版本
 - Docker Desktop 或 Docker Engine
-- MySQL 8.x
-- DeepSeek API Key
-- DashScope API Key
+- DeepSeek API Key 和 DashScope API Key，用于 AI 对话和向量检索
 
-> `docker-compose.yml` 只启动 Agent、Redis、Elasticsearch、Kibana 和 Qdrant，不包含 MySQL、Go 后端与 Vue 前端。
+本地开发时，Go API、Chat Worker、Judge Worker 和 Python Agent 在宿主机运行。`docker-compose.yml` 启动 Vue 开发服务、MySQL、Redis、Elasticsearch 和 Qdrant。Kibana 使用 `debug` profile 按需启动。
 
-### 1. 创建数据库
+### 1. 准备本地配置
 
-```sql
-CREATE DATABASE gojo
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+在仓库根目录执行，已有私有配置时核对对应字段：
+
+```bash
+cp -n .env.example .env
+cp -n config/config.example.yaml config/config.dev.yaml
 ```
 
-Go 后端启动时使用 GORM `AutoMigrate` 创建或补齐当前模型表。生产环境建议改为版本化迁移。
+编辑 `.env`，填写本地 MySQL 用户密码、Root 密码、Redis 密码、`AGENT_SERVICE_TOKEN`、DeepSeek 和 DashScope Key。Python 使用 `GO_BACKEND_BASE_URL=http://127.0.0.1:8080` 和 `QDRANT_URL=http://127.0.0.1:6333` 连接本机 API 与映射端口。
 
-### 2. 配置 Go 后端
-
-```powershell
-Copy-Item config\config.example.yaml config\config.dev.yaml
-```
-
-`APP_ENV` 默认是 `dev`，因此读取 `config/config.dev.yaml`。至少填写：
+Go 默认读取 `config/config.dev.yaml`。在已有配置块内填写下面的字段，数据库名和用户与 `.env` 一致，密码与 `MYSQL_PASSWORD` 一致：
 
 ```yaml
 sql:
-  dsn: "root:password@tcp(127.0.0.1:3306)/gojo?charset=utf8mb4&parseTime=True&loc=Local"
+  dsn: "gojo:你的本地MySQL密码@tcp(127.0.0.1:3306)/gojo?charset=utf8mb4&parseTime=True&loc=Local"
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: "与.env中的REDIS_PASSWORD一致"
 
 jwt:
-  secret: "replace-with-a-long-random-secret"
+  secret: "填写本地随机密钥"
 
 elasticsearch:
   addresses:
-    - "http://localhost:9200"
+    - "http://127.0.0.1:9200"
 
 chat:
-  worker_count: 3
-  agent_base_url: "http://localhost:8000"
+  worker_count: 1
+  agent_base_url: "http://127.0.0.1:8000"
   agent_timeout_seconds: 120
-  agent_service_token: "replace-with-another-long-random-secret"
+  agent_service_token: "与.env中的AGENT_SERVICE_TOKEN一致"
+
+judge:
+  worker_count: 1
 ```
 
-配置可以通过 `GOJO_` 环境变量覆盖，层级中的点转换为下划线，例如 `GOJO_SERVER_PORT`、`GOJO_REDIS_ADDR` 和 `GOJO_SQL_DSN`。
+Go 从进程环境中的 `GOJO_*` 变量覆盖 YAML 配置，例如 `GOJO_SQL_DSN`。本机 Go 通过 YAML 或启动环境取得配置；Python 的启动命令用 `--env-file .env` 加载环境文件。
 
-### 3. 配置并启动中间件与 Agent
+### 2. 启动 Docker 中的依赖和前端
 
-```powershell
-Copy-Item .env.example .env
+```bash
+docker compose up -d --build
+docker compose ps
+curl -fsS http://127.0.0.1:9200
 ```
 
-填写 DeepSeek 和 DashScope Key，并在 `.env` 中补充：
+等待 MySQL 变为 `healthy`、Elasticsearch 能响应后继续。MySQL 首次启动会创建 `.env` 中指定的数据库和用户，后续启动会复用 `mysql_data` 数据卷。已有数据卷的账号密码以初始化时的值为准。Go 在初始化管理员或启动 API 时通过 GORM `AutoMigrate` 补齐业务表。
 
-```dotenv
-AGENT_SERVICE_TOKEN=replace-with-another-long-random-secret
+Vue 容器首次启动会执行 `npm ci`，完成后可访问 `http://localhost:3000`。源码挂载到容器，Vite 支持热更新；容器把 `/api` 代理到宿主机的 `http://host.docker.internal:8080`。Mac Docker Desktop 提供这个地址。
+
+如需 Kibana：
+
+```bash
+docker compose --profile debug up -d kibana
 ```
 
-该值必须与 `chat.agent_service_token` 完全相同，否则 Chat 和 RAG 同步会返回 `401`。
+### 3. 在本机启动 Python Agent
+
+以下命令均在仓库根目录执行，虚拟环境只需创建和安装一次：
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r agent/requirements.txt
+.venv/bin/python -m uvicorn app:app --app-dir agent --env-file .env \
+  --host 127.0.0.1 --port 8000 --reload --reload-dir agent
+```
+
+### 4. 初始化本地管理员
+
+如需管理题目、标签或用户，可初始化管理员；Chat Worker 不依赖该账号。普通使用也可以直接通过前端注册账号。在新终端的仓库根目录执行 `read` 后输入管理员密码并回车，密码长度为 12–72 字节：
+
+```bash
+read -rs BOOTSTRAP_ADMIN_PASSWORD
+export BOOTSTRAP_ADMIN_PASSWORD
+APP_ENV=dev BOOTSTRAP_ADMIN_USERNAME=admin go run ./cmd/bootstrap_admin
+unset BOOTSTRAP_ADMIN_PASSWORD
+```
+
+用户名长度为 3–32 个字符。再次执行时，若同名账号已经是启用的管理员，工具会安全退出。
+
+### 5. 在本机启动 Go API 和 Judge Worker
+
+API 在一个终端运行：
+
+```bash
+APP_ENV=dev go run ./cmd/server
+```
+
+Judge Worker 在另一个终端运行。Mac 上显式传入当前 Docker context 的 socket，并使用可共享的临时目录：
+
+```bash
+docker pull golang:alpine
+mkdir -p "$HOME/.cache/gojo-judge-dev"
+APP_ENV=dev DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')" \
+  TMPDIR="$HOME/.cache/gojo-judge-dev" go run ./cmd/judge_worker
+```
+
+API 默认监听 `http://localhost:8080`，启动 Chat、Sync Worker 和 Redis 实时事件桥接。Judge Worker 通过 Docker Engine 创建编译、运行沙箱。首次需要示例题时，在仓库根目录执行 `APP_ENV=dev go run ./cmd/seed_problems`。
+
+本地服务直接在终端输出运行信息，项目不再额外保存本地日志文件。Agent 执行日志按回合任务 ID 关联，使用说明见 [Agent 执行日志](docs/2026-11-17-agent-tracing-plan.md)。
+
+### 6. 检查访问入口
+
+| 服务 | 默认地址 |
+| --- | --- |
+| Vue 开发页面 | `http://localhost:3000` |
+| Go API | `http://127.0.0.1:8080/ping` |
+| Python Agent | `http://127.0.0.1:8000/ping` |
+| MySQL | `127.0.0.1:3306` |
+| Redis | `127.0.0.1:6379` |
+| Elasticsearch | `http://127.0.0.1:9200` |
+| Qdrant HTTP | `http://127.0.0.1:6333/collections` |
+| Kibana，启用 debug profile 后 | `http://localhost:5601` |
+
+先验证登录和题库，再提交代码并检查终态，最后测试 AI 错题分析和推荐。
 
 ### 生产环境密钥要求
 
 上线时设置 `APP_ENV=prod`（或 `production`）。仓库提供可提交、无密钥的 `config/config.production.example.yaml`：Docker 生产镜像会将它作为 `config.production.yaml` 使用，并由 `GOJO_*` 环境变量注入密钥。若直接运行 Go 程序，请先复制该模板为本机私有的 `config/config.production.yaml`。Go 后端会在连接数据库前拒绝启动，除非下列三个值均为至少 32 个字符的随机值：`jwt.secret`、`chat.agent_service_token`、`redis.password`。Agent 也会拒绝使用空、过短或示例形式的 `AGENT_SERVICE_TOKEN` 启动。
 
 `chat.agent_service_token` 与 `.env` 中的 `AGENT_SERVICE_TOKEN` 必须完全一致；JWT Secret 和 Redis 密码必须分别独立生成，不能复用。可用密码管理器或 `openssl rand -hex 32` 生成随机值，且不要提交本机的 `config.production.yaml` 或 `.env`。
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker pull golang:alpine
-```
-
-| 服务 | 默认地址 |
-| --- | --- |
-| FastAPI Agent | `http://localhost:8000` |
-| Redis | `localhost:6379` |
-| Elasticsearch | `http://localhost:9200` |
-| Kibana | `http://localhost:5601` |
-| Qdrant HTTP | `http://localhost:6333` |
-
-### 4. 初始化管理员账号
-
-Chat Worker 初始化时要求数据库至少存在一个 `role=1`、`status='active'` 且 `token_version > 0` 的用户。生产 Compose 提供一次性 `bootstrap-admin` 工具：在私有环境文件中填写 `BOOTSTRAP_ADMIN_USERNAME` 和 `BOOTSTRAP_ADMIN_PASSWORD` 后执行：
-
-```bash
-docker compose --env-file .env.local-production -f docker-compose.prod.yml --profile tools run --rm bootstrap-admin
-```
-
-用户名必须为 3-32 个字符，密码必须为 12-72 字节。工具不会覆盖或提升同名普通用户；重复执行时，若该账号已经是启用的管理员，会安全退出。初始化成功后应从环境文件清空 `BOOTSTRAP_ADMIN_PASSWORD`。
-
-### 5. 启动 Go API 与 Judge Worker
-
-在两个终端分别运行：
-
-```bash
-go mod download
-go run ./cmd/server
-```
-
-```bash
-go run ./cmd/judge_worker
-```
-
-API 默认监听 `http://localhost:8080`，初始化 MySQL、Redis 和 Elasticsearch，启动 Chat、Sync Worker 与 Redis 实时事件桥接，但不连接 Docker。Judge Worker 不开放 HTTP 端口，负责初始化 Docker Client、启动判题协程池、恢复过期任务，并在开始消费前回收当前环境的残留判题容器。
-
-### 6. 启动前端
-
-```bash
-cd vue
-npm install
-npm run dev
-```
-
-Vite 默认监听 `http://localhost:3000`，将 `/api` 请求（包括 SSE）代理到 `http://localhost:8080`。
-
-### 7. 健康检查
-
-```bash
-curl http://localhost:8080/ping
-curl http://localhost:8000/ping
-curl http://localhost:9200
-curl http://localhost:6333/collections
-```
 
 ## 4GB 云服务器部署
 
@@ -403,7 +423,7 @@ curl -fsS http://127.0.0.1:8088/ping
 docker stats --no-stream
 ```
 
-Compose 网关默认只绑定 `127.0.0.1:8088`。公网上线时应在宿主机配置 Nginx 或 Caddy，将域名的 HTTPS 请求反向代理到该地址；安全组只开放必要的 `22`、`80`、`443` 端口，不要暴露 API 容器、MySQL、Redis、Elasticsearch、Qdrant 或 Docker Socket。更完整的本地验证、停机与排错命令见 [LOCAL_PRODUCTION.md](LOCAL_PRODUCTION.md)。
+Compose 网关默认只绑定 `127.0.0.1:8088`。公网上线时应在宿主机配置 Nginx 或 Caddy，将域名的 HTTPS 请求反向代理到该地址；安全组只开放必要的 `22`、`80`、`443` 端口，不要暴露 API 容器、MySQL、Redis、Elasticsearch、Qdrant 或 Docker Socket。
 
 > 生产模板默认不信任任何代理 CIDR，因此在 Compose 网关后所有访客可能共享同一个 IP 限流配额。这对小规模内测偏保守但安全；如果需要精确的用户源 IP 限流，应先为 Docker 网络固定子网，再仅将网关的 IP/CIDR 加入 `server.trusted_proxy_cidrs`，不要盲目信任所有代理。
 
@@ -467,7 +487,7 @@ Compose 网关默认只绑定 `127.0.0.1:8088`。公网上线时应在宿主机�
 | Chat | `GET /api/chat/turns/:id/stream?ticket=...` | Ticket | SSE 监听回合 |
 | Chat | `POST /api/chat/turns/:id/feedback` | 登录 | 提交 ChatPlanFeedback |
 | 管理后台 | `/api/admin/*` | 管理员 | 用户、题目、标签与测试用例管理 |
-| Agent 工具 | `/api/admin/agent/*` | 管理员 + Service Token | FastAPI 内部工具调用 |
+| Agent 工具 | `/api/agent/*` | 服务密钥 + 有效回合上下文 | FastAPI 内部工具调用；独立于用户 JWT |
 
 ## 数据模型
 
@@ -538,7 +558,7 @@ docker compose up -d --build agent
 
 - 检查 `chat_turn_queue` 和 `chat_turn_processing`。
 - 检查 Go 到 Agent 的连通性，以及 Agent 到 `GO_BACKEND_BASE_URL` 的反向连通性。
-- 检查活动管理员服务账号、JWT Secret 和 Service Token。
+- 检查 Go 和 Python 的 Service Token 是否一致，以及回合编号、执行编号、运行状态和租约是否有效。
 - Chat Worker 以数据库状态为事实来源，并使用 Processing Token、租约续期和超时扫描恢复陈旧回合。
 
 ### 中文搜索召回较弱

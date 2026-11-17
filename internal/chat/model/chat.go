@@ -63,11 +63,12 @@ type ChatTurn struct {
 	ErrorMessage string `gorm:"type:text" json:"error_message"`
 	Model        string `gorm:"size:100" json:"model"`
 
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	FinishedAt      *time.Time `json:"finished_at"`
-	ProcessingToken string     `gorm:"size:64;index" json:"-"`
-	LeaseExpiresAt  *time.Time `gorm:"index" json:"-"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	FinishedAt        *time.Time `json:"finished_at"`
+	ProcessingToken   string     `gorm:"size:64;index" json:"-"`
+	LeaseExpiresAt    *time.Time `gorm:"index" json:"-"`
+	MemorySyncPending bool       `gorm:"not null;default:false;index" json:"-"`
 }
 
 // ChatPlanFeedback records a user's evaluation of one completed assistant turn.

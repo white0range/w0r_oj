@@ -3,12 +3,15 @@ import re
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import StructuredTool
 from langchain_deepseek import ChatDeepSeek
 from pydantic import BaseModel, Field
 
-from rag.memory_service import save_chat_memory, search_user_memories
+from client import AgentToolAuth, AgentExecutionExpired, require_active_execution
+from rag.memory_service import search_user_memories
 from schemas import ChatResult, RecommendedProblem
+from tracing import trace_step, trace_event, console_callbacks
 from tool_executor import ToolExecutionContext, build_query_variants, execute_tool
 
 
@@ -152,57 +155,59 @@ def _memory_context_text(memories: list[dict[str, Any]]) -> str:
 def _load_memory_context(user_id: int, query_text: str, debug_enabled: bool) -> str:
     query = query_text.strip() or "general oj study chat"
     try:
-        memories = search_user_memories(user_id=user_id, query=query)
+        with trace_step("memory.retrieve"):
+            memories = search_user_memories(user_id=user_id, query=query)
     except Exception as e:
         if debug_enabled:
-            print(f"[agent] memory lookup skipped due to error: {e}")
+            trace_event("memory_fallback", error_type=type(e).__name__)
         return ""
 
     if debug_enabled:
-        print(f"[agent] memory hits={len(memories)}")
+        trace_event("memory_hits", count=len(memories))
 
     return _memory_context_text(memories)
 
 
-def _save_memory(user_id: int, query_text: str, result: ChatResult, debug_enabled: bool) -> None:
-    try:
-        point_id = save_chat_memory(
-            user_id=user_id,
-            query_text=query_text,
-            result=result,
-            memory_kind="chat",
-        )
-    except Exception as e:
-        if debug_enabled:
-            print(f"[agent] memory save skipped due to error: {e}")
-        return
+class ExecutionGuard(AgentMiddleware):
+    def __init__(self, auth: AgentToolAuth, user_id: int):
+        self.auth = auth
+        self.user_id = user_id
 
-    if debug_enabled:
-        print(f"[agent] memory saved point_id={point_id}")
+    def check(self) -> None:
+        context = require_active_execution(self.auth)
+        if context["user_id"] != self.user_id:
+            raise AgentExecutionExpired("agent execution owner mismatch")
+
+    def before_model(self, state, runtime):
+        self.check()
+        return None
+
+    def after_model(self, state, runtime):
+        self.check()
+        return None
 
 
-def _build_tools(token: str, context: ToolExecutionContext, bound_user_id: int) -> list[StructuredTool]:
+def _build_tools(auth: AgentToolAuth, context: ToolExecutionContext) -> list[StructuredTool]:
     def user_ac_history() -> dict:
         """获取用户的已解决历史，包括解题数量和已解决题目 ID。"""
-        return execute_tool("user_ac_history", {}, token, context, bound_user_id)
+        return execute_tool("user_ac_history", {}, auth, context)
 
     def user_failed_submissions(limit: int = 10) -> dict:
         """获取用户最近的失败提交记录。"""
-        return execute_tool("user_failed_submissions", {"limit": limit}, token, context, bound_user_id)
+        return execute_tool("user_failed_submissions", {"limit": limit}, auth, context)
 
     def failed_submission_detail(submission_id: int) -> dict:
         """获取单次失败提交的源码、判题输出、题目描述和标签。"""
         return execute_tool(
             "failed_submission_detail",
             {"submission_id": submission_id},
-            token,
+            auth,
             context,
-            bound_user_id,
         )
 
     def user_tag_stats() -> dict:
         """获取按标签聚合的用户训练统计。"""
-        return execute_tool("user_tag_stats", {}, token, context, bound_user_id)
+        return execute_tool("user_tag_stats", {}, auth, context)
 
     def candidate_problems(tags: list[str], exclude_ids: list[int], limit: int = 10) -> dict:
         """根据明确标签获取候选题目，并排除已解决题目 ID。"""
@@ -213,9 +218,8 @@ def _build_tools(token: str, context: ToolExecutionContext, bound_user_id: int) 
                 "exclude_ids": exclude_ids,
                 "limit": limit,
             },
-            token,
+            auth,
             context,
-            bound_user_id,
         )
 
     def semantic_candidate_problems(query: str, exclude_ids: list[int], limit: int = 10) -> dict:
@@ -227,9 +231,8 @@ def _build_tools(token: str, context: ToolExecutionContext, bound_user_id: int) 
                 "exclude_ids": exclude_ids,
                 "limit": limit,
             },
-            token,
+            auth,
             context,
-            bound_user_id,
         )
 
     def hybrid_candidate_problems(query: str, exclude_ids: list[int], limit: int = 10) -> dict:
@@ -241,9 +244,8 @@ def _build_tools(token: str, context: ToolExecutionContext, bound_user_id: int) 
                 "exclude_ids": exclude_ids,
                 "limit": limit,
             },
-            token,
+            auth,
             context,
-            bound_user_id,
         )
 
     return [
@@ -372,7 +374,7 @@ def summarize_chat_session(existing_summary: str = "", messages: list[dict[str, 
         f"新归档消息：\n{transcript}\n"
     )
 
-    response = _build_model().invoke(prompt)
+    response = _build_model().invoke(prompt, config={"callbacks": console_callbacks()})
     summary = _truncate_text(_message_content_to_text(getattr(response, "content", response)))
     if summary:
         return summary
@@ -386,10 +388,12 @@ def summarize_chat_session(existing_summary: str = "", messages: list[dict[str, 
 def run_chat_with_langchain(
     user_id: int,
     goal: str,
-    token: str,
+    auth: AgentToolAuth,
     session_summary: str = "",
     messages: list[dict[str, Any]] | None = None,
 ) -> ChatResult:
+    guard = ExecutionGuard(auth, user_id)
+    guard.check()
     debug_enabled = _is_debug_enabled()
     normalized_messages = messages or []
     latest_user_query = _latest_user_query(goal, normalized_messages) or "general oj study chat"
@@ -398,7 +402,8 @@ def run_chat_with_langchain(
 
     agent = create_agent(
         model=_build_model(),
-        tools=_build_tools(token, context, user_id),
+        tools=_build_tools(auth, context),
+        middleware=[guard],
         system_prompt=(
             "你是一名 OJ 对话助手。"
             "你既要回答直接的算法或 OJ 问题，也要提供个性化训练建议。"
@@ -431,14 +436,15 @@ def run_chat_with_langchain(
     )
 
     if debug_enabled:
-        print(f"[agent] start langchain deepseek agent user_id={user_id} latest_query={latest_user_query!r}")
+        print(f"[agent] turn_id={auth.turn_id} stage=graph_start")
 
-    result = agent.invoke({"messages": runtime_messages})
+    result = agent.invoke({"messages": runtime_messages}, config={"callbacks": console_callbacks()})
 
     if debug_enabled:
-        print(f"[agent] invoke finished keys={list(result.keys())}")
+        print(f"[agent] turn_id={auth.turn_id} stage=graph_done")
 
     final_text = _extract_result_text(result)
-    parsed = _parse_plain_text_result(final_text)
-    _save_memory(user_id=user_id, query_text=latest_user_query, result=parsed, debug_enabled=debug_enabled)
+    with trace_step("response.parse"):
+        parsed = _parse_plain_text_result(final_text)
+    guard.check()
     return parsed

@@ -328,6 +328,7 @@ func (r *chatRepoMysql) CompleteClaimedTurn(ctx context.Context, turnID uint, pr
 				"assistant_message_id": assistantMessage.ID,
 				"status":               model.TaskStatusSucceeded,
 				"result":               rawResult,
+				"memory_sync_pending":  true,
 				"finished_at":          finishedAt,
 				"processing_token":     "",
 				"lease_expires_at":     nil,

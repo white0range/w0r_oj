@@ -25,4 +25,3 @@ elasticsearch_data
 qdrant_storage
 
 # Documentation and local deployment artifacts are not required by the Go build
-LOCAL_PRODUCTION.md

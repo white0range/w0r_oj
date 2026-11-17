@@ -80,7 +80,7 @@ func main() {
 	leaderboardService := leaderboardSvc.NewLeaderboardService(lr, userService)
 	chatService := chatSvc.NewChatService(cr, userService, subR, pr)
 
-	cw, err := chatWorker.NewChatWorker(cr)
+	cw, err := chatWorker.NewChatWorker(cr, syncManager)
 	if err != nil {
 		log.Fatalf("chat worker init failed: %v", err)
 	}
@@ -94,6 +94,7 @@ func main() {
 	tcHandler := problemHandler.NewTestCaseHandler(testCaseService)
 	searchHandler := problemHandler.NewSearchHandler(problemService)
 	cHandler := chatHandler.NewChatHandler(chatService)
+	agentHandler := chatHandler.NewAgentToolHandler(chatService)
 
 	r := app.SetupRouter(
 		uHandler,
@@ -104,6 +105,7 @@ func main() {
 		tcHandler,
 		searchHandler,
 		cHandler,
+		agentHandler,
 	)
 
 	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)

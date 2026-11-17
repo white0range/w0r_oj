@@ -27,6 +27,14 @@
         <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
           鲁ICP备2026058391号-1
         </a>
+        <a
+          href="https://beian.mps.gov.cn/#/query/webSearch?code=37130202373179"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img src="/police-filing.png" alt="" width="16" height="16" />
+          鲁公网安备37130202373179号
+        </a>
       </div>
     </footer>
   </div>

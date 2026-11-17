@@ -2,12 +2,16 @@ import hmac
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+from client import AgentToolAuth, AgentExecutionExpired
 from agent_runner import run_chat_agent, summarize_chat_session
 from rag.index_service import delete_problem_doc, upsert_problem_doc
 from rag.problem_doc_service import fetch_problem_doc_record
-from schemas import ChatRequest, ChatResponse, MessageResponse, ProblemIndexSyncRequest, SessionSummaryRequest, SessionSummaryResponse
+from rag.memory_service import save_chat_memory
+from tracing import trace_task
+from schemas import ChatRequest, ChatResponse, ChatMemorySyncRequest, MessageResponse, ProblemIndexSyncRequest, SessionSummaryRequest, SessionSummaryResponse
 
 MIN_PRODUCTION_SECRET_LENGTH = 32
 
@@ -35,16 +39,15 @@ async def lifespan(_: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+@app.exception_handler(AgentExecutionExpired)
+def expired_execution(_: Request, __: AgentExecutionExpired):
+    return JSONResponse(status_code=409, content={"code": "agent_execution_expired", "message": "agent execution is no longer current"})
+
+
 def _require_service_token(token: str) -> None:
-    expected = os.getenv("AGENT_SERVICE_TOKEN", "")
-    if not expected or not hmac.compare_digest(token, expected):
+    expected = os.getenv("AGENT_SERVICE_TOKEN", "").strip()
+    if not expected or not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=401, detail="invalid agent service token")
-
-
-def _require_bearer_token(authorization: str) -> str:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    return authorization.removeprefix("Bearer ").strip()
 
 
 @app.get("/ping")
@@ -53,17 +56,27 @@ def ping():
 
 
 @app.post("/chat/run", response_model=ChatResponse)
-def run_chat(req: ChatRequest, authorization: str = Header(default=""), x_agent_service_token: str = Header(default="")):
+def run_chat(req: ChatRequest, x_agent_service_token: str = Header(default="")):
     _require_service_token(x_agent_service_token)
-    result = run_chat_agent(req.user_id, req.goal, _require_bearer_token(authorization), req.session_summary, [item.model_dump() for item in req.messages])
+    with trace_task(req.turn_id, "agent", req.processing_token):
+        result = run_chat_agent(req.user_id, req.goal, AgentToolAuth(turn_id=req.turn_id, processing_token=req.processing_token), req.session_summary, [item.model_dump() for item in req.messages])
     return ChatResponse(message="chat response generated successfully", result=result)
 
 
-@app.post("/chat/summarize-session", response_model=SessionSummaryResponse)
-def summarize_session(req: SessionSummaryRequest, authorization: str = Header(default=""), x_agent_service_token: str = Header(default="")):
+@app.post("/memory/sync", response_model=MessageResponse)
+def sync_chat_memory(req: ChatMemorySyncRequest, x_agent_service_token: str = Header(default="")):
     _require_service_token(x_agent_service_token)
-    summary = summarize_chat_session(req.existing_summary, [item.model_dump() for item in req.messages])
-    _require_bearer_token(authorization)
+    with trace_task(req.turn_id, "memory_sync"):
+        save_chat_memory(user_id=req.user_id, turn_id=req.turn_id, query_text=req.query_text,
+                         result=req.result, created_at=req.finished_at.isoformat())
+    return MessageResponse(message="chat memory synced")
+
+
+@app.post("/chat/summarize-session", response_model=SessionSummaryResponse)
+def summarize_session(req: SessionSummaryRequest, x_agent_service_token: str = Header(default="")):
+    _require_service_token(x_agent_service_token)
+    with trace_task(req.turn_id, "summary"):
+        summary = summarize_chat_session(req.existing_summary, [item.model_dump() for item in req.messages])
     return SessionSummaryResponse(message="session summary generated successfully", summary=summary)
 
 

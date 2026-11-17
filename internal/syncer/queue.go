@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	pendingKey         = "sync:pending"
-	processingKey      = "sync:processing"
-	processingLeaseKey = "sync:processing:leases"
-	retryAtKey         = "sync:retry_at"
-	deadLetterKey      = "sync:dead_letter"
+	pendingKey               = "sync:pending"
+	processingKey            = "sync:processing"
+	processingLeaseKey       = "sync:processing:leases"
+	retryAtKey               = "sync:retry_at"
+	deadLetterKey            = "sync:dead_letter"
+	chatMemoryDispatchPrefix = "sync:chat_memory:dispatch:"
 )
 
 type queue struct {
@@ -32,7 +33,24 @@ func (q *queue) enqueue(ctx context.Context, task Task) error {
 	if err != nil {
 		return err
 	}
+	if task.Target == TargetChatMemory && task.Action == ActionChatMemorySync {
+		if task.EntityID == 0 {
+			return errors.New("chat memory turn id must be positive")
+		}
+		// Keep the dispatch marker throughout retries and dead-lettering. A dead-letter
+		// task requires explicit replay, rather than being retried by every DB scan.
+		return q.client.Eval(ctx, `
+if redis.call('SETNX', KEYS[1], ARGV[1]) == 1 then
+  redis.call('LPUSH', KEYS[2], ARGV[2])
+end
+return 1
+`, []string{chatMemoryDispatchKey(task.EntityID), pendingKey}, task.ID, raw).Err()
+	}
 	return q.client.LPush(ctx, pendingKey, raw).Err()
+}
+
+func chatMemoryDispatchKey(turnID uint) string {
+	return fmt.Sprintf("%s%d", chatMemoryDispatchPrefix, turnID)
 }
 
 // claim atomically moves a task into processing and attaches a lease to it.
@@ -62,11 +80,16 @@ return task
 }
 
 func (q *queue) acknowledge(ctx context.Context, raw string) error {
+	dispatchKey := ""
+	if task, err := parseTask(raw); err == nil && task.Target == TargetChatMemory && task.Action == ActionChatMemorySync {
+		dispatchKey = chatMemoryDispatchKey(task.EntityID)
+	}
 	return q.client.Eval(ctx, `
 redis.call('LREM', KEYS[1], 1, ARGV[1])
 redis.call('ZREM', KEYS[2], ARGV[1])
+if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
 return 1
-`, []string{processingKey, processingLeaseKey}, raw).Err()
+`, []string{processingKey, processingLeaseKey, dispatchKey}, raw).Err()
 }
 
 func (q *queue) retry(ctx context.Context, processingRaw string, task Task, retryAt time.Time) error {
