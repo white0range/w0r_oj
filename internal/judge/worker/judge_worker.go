@@ -208,7 +208,7 @@ func (w *JudgeWorker) handleFailure(ctx context.Context, raw string, task dto.Ju
 	task.LastError = judgeQueue.TruncateError(cause)
 	if task.RetryCount > maxRetryCount {
 		log.Printf("judge task submission_id=%d exhausted retries: %v", task.SubmissionID, cause)
-		if err := w.svc.MarkFailed(ctx, task, cause); err != nil {
+		if err := w.svc.MarkFailed(ctx, task); err != nil {
 			log.Printf("mark exhausted judge task submission_id=%d failed: %v", task.SubmissionID, err)
 		}
 		if err := w.queue.DeadLetter(ctx, raw, task); err != nil {

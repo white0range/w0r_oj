@@ -11,7 +11,7 @@ import (
 
 type TestCaseRepository interface {
 	AddTestCase(ctx context.Context, testCase *model.TestCase) error
-	DeleteTestCase(ctx context.Context, caseID string) (uint, error)
+	DeleteTestCase(ctx context.Context, caseID uint) (uint, error)
 	GetTestCase(ctx context.Context, problemID uint, page, limit int) (int64, []model.TestCase, error)
 }
 
@@ -31,7 +31,7 @@ func (r *TestCaseRepoMysql) AddTestCase(ctx context.Context, testCase *model.Tes
 	return mysql.DB.WithContext(ctx).Create(testCase).Error
 }
 
-func (r *TestCaseRepoMysql) DeleteTestCase(ctx context.Context, caseID string) (uint, error) {
+func (r *TestCaseRepoMysql) DeleteTestCase(ctx context.Context, caseID uint) (uint, error) {
 	var testCase model.TestCase
 	result := mysql.DB.WithContext(ctx).Where("id = ?", caseID).First(&testCase)
 	if result.Error != nil {

@@ -46,7 +46,11 @@ func (q *Queue) Enqueue(ctx context.Context, task dto.JudgeTask) (bool, error) {
 
 	result, err := q.client.Eval(ctx, `
 if redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then
-  redis.call('LPUSH', KEYS[2], ARGV[2])
+  local pushed = redis.pcall('LPUSH', KEYS[2], ARGV[2])
+  if type(pushed) == 'table' and pushed.err then
+    redis.call('DEL', KEYS[1])
+    return pushed
+  end
   return 1
 end
 return 0

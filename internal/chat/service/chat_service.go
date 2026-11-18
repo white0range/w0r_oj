@@ -14,6 +14,7 @@ import (
 	"gojo/internal/chat/dto"
 	"gojo/internal/chat/model"
 	"gojo/internal/chat/repository"
+	judgeModel "gojo/internal/judge/model"
 	problemModel "gojo/internal/problem/model"
 	submissionModel "gojo/internal/submission/model"
 	userDTO "gojo/internal/user/dto"
@@ -29,7 +30,7 @@ type UserProfileProvider interface {
 
 // SubmissionDataProvider 閹绘劒绶电拋顓犵矊鐠佲€冲灊闂団偓鐟曚胶娈戦幓鎰唉閸樺棗褰堕弫鐗堝祦閵?
 type SubmissionDataProvider interface {
-	GetSubmissionByID(ctx context.Context, id string) (*submissionModel.Submission, error)
+	GetSubmissionByID(ctx context.Context, id uint) (*submissionModel.Submission, error)
 	GetAllSubmissionsByUserID(ctx context.Context, userID uint) ([]submissionModel.Submission, error)
 	GetRecentFailedSubmissionsByUserID(ctx context.Context, userID uint, limit int) ([]submissionModel.Submission, error)
 }
@@ -37,7 +38,7 @@ type SubmissionDataProvider interface {
 // ProblemCatalogProvider 閹绘劒绶电拋顓犵矊鐠佲€冲灊闂団偓鐟曚胶娈戞０妯兼窗閻╊喖缍嶆穱鈩冧紖閵?
 type ProblemCatalogProvider interface {
 	GetAllProblemsWithTags(ctx context.Context) ([]problemModel.Problem, error)
-	GetProblemByID(ctx context.Context, id string) (*problemModel.Problem, error)
+	GetProblemByID(ctx context.Context, id uint) (*problemModel.Problem, error)
 }
 
 type ChatService struct {
@@ -109,7 +110,7 @@ func (s *ChatService) GetUserFailedSubmissions(ctx context.Context, userID uint,
 			ProblemTitle: title,
 			Status:       sub.Status,
 			Language:     sub.Language,
-			ActualOutput: sub.ActualOutput,
+			ActualOutput: judgeModel.PublicMessage(judgeModel.JudgeStatus(sub.Status)),
 			CreatedAt:    sub.CreatedAt,
 		})
 	}
@@ -125,7 +126,7 @@ func (s *ChatService) GetFailedSubmissionDetail(ctx context.Context, userID uint
 		return nil, errors.New("chat providers not configured")
 	}
 
-	submission, err := s.submissions.GetSubmissionByID(ctx, strconv.FormatUint(uint64(submissionID), 10))
+	submission, err := s.submissions.GetSubmissionByID(ctx, submissionID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func (s *ChatService) GetFailedSubmissionDetail(ctx context.Context, userID uint
 		return nil, apperror.ErrAlreadyAccepted
 	}
 
-	problem, err := s.problems.GetProblemByID(ctx, strconv.FormatUint(uint64(submission.ProblemID), 10))
+	problem, err := s.problems.GetProblemByID(ctx, submission.ProblemID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +155,7 @@ func (s *ChatService) GetFailedSubmissionDetail(ctx context.Context, userID uint
 		Status:             submission.Status,
 		Language:           submission.Language,
 		Code:               submission.Code,
-		ActualOutput:       submission.ActualOutput,
+		ActualOutput:       judgeModel.PublicMessage(judgeModel.JudgeStatus(submission.Status)),
 	}, nil
 }
 
@@ -336,7 +337,7 @@ func (s *ChatService) GetProblemDetail(ctx context.Context, problemID uint) (*dt
 		return nil, errors.New("problem provider not configured")
 	}
 
-	problem, err := s.problems.GetProblemByID(ctx, uintToString(problemID))
+	problem, err := s.problems.GetProblemByID(ctx, problemID)
 	if err != nil {
 		return nil, err
 	}

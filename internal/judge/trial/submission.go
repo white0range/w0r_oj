@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"strconv"
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/submission/model"
@@ -15,7 +14,7 @@ import (
 var ErrIneligible = errors.New("trial requires a failed Go submission")
 
 func LoadSubmission(ctx context.Context, userID, submissionID uint) (*model.Submission, error) {
-	submission, err := repository.NewSubmissionRepository().GetSubmissionByID(ctx, strconv.FormatUint(uint64(submissionID), 10))
+	submission, err := repository.NewSubmissionRepository().GetSubmissionByID(ctx, submissionID)
 	if err != nil {
 		return nil, err
 	}

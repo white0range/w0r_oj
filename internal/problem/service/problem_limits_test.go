@@ -29,7 +29,7 @@ func TestCreateProblemRejectsUnsafeResourceLimits(t *testing.T) {
 func TestUpdateProblemRejectsUnsafeResourceLimits(t *testing.T) {
 	svc := &ProblemService{}
 
-	err := svc.UpdateProblem(context.Background(), "1", dto.ProblemRequest{TimeLimit: 10001})
+	err := svc.UpdateProblem(context.Background(), 1, dto.ProblemRequest{TimeLimit: 10001})
 	if !errors.Is(err, apperror.ErrInvalidProblemLimits) {
 		t.Fatalf("UpdateProblem() error = %v, want ErrInvalidProblemLimits", err)
 	}

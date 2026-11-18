@@ -12,7 +12,8 @@ import (
 // SubmissionRepository defines persistence operations for submissions.
 type SubmissionRepository interface {
 	CreateSubmission(ctx context.Context, sub *model.Submission) error
-	GetSubmissionByID(ctx context.Context, id string) (*model.Submission, error)
+	GetSubmissionByID(ctx context.Context, id uint) (*model.Submission, error)
+	GetSubmissionByUserID(ctx context.Context, id, userID uint) (*model.Submission, error)
 	GetSubmissionsByUserID(ctx context.Context, userID uint, page, limit int) (int64, []model.Submission, error)
 	GetAllSubmissionsByUserID(ctx context.Context, userID uint) ([]model.Submission, error)
 	GetRecentFailedSubmissionsByUserID(ctx context.Context, userID uint, limit int) ([]model.Submission, error)
@@ -51,9 +52,15 @@ func (r *submissionRepoMysql) ListPendingSubmissionsBefore(ctx context.Context, 
 	return submissions, err
 }
 
-func (r *submissionRepoMysql) GetSubmissionByID(ctx context.Context, id string) (*model.Submission, error) {
+func (r *submissionRepoMysql) GetSubmissionByID(ctx context.Context, id uint) (*model.Submission, error) {
 	var sub model.Submission
-	err := mysql.DB.WithContext(ctx).First(&sub, id).Error
+	err := mysql.DB.WithContext(ctx).Omit("actual_output").Where("id = ?", id).First(&sub).Error
+	return &sub, err
+}
+
+func (r *submissionRepoMysql) GetSubmissionByUserID(ctx context.Context, id, userID uint) (*model.Submission, error) {
+	var sub model.Submission
+	err := mysql.DB.WithContext(ctx).Omit("actual_output").Where("id = ? AND user_id = ?", id, userID).First(&sub).Error
 	return &sub, err
 }
 
@@ -92,6 +99,7 @@ func (r *submissionRepoMysql) GetRecentFailedSubmissionsByUserID(ctx context.Con
 
 	var items []model.Submission
 	err := mysql.DB.WithContext(ctx).
+		Omit("actual_output").
 		Where("user_id = ? AND status <> ?", userID, "AC").
 		Order("created_at desc").
 		Limit(limit).

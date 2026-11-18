@@ -14,12 +14,12 @@ import (
 
 type ProblemRepository interface {
 	CreateProblem(ctx context.Context, problem *model.Problem) error
-	GetProblemByID(ctx context.Context, id string) (*model.Problem, error)
+	GetProblemByID(ctx context.Context, id uint) (*model.Problem, error)
 	GetProblemList(ctx context.Context, offset, limit int, tagID string) ([]model.Problem, int64, error)
 	GetUserACProblemIDs(ctx context.Context, uid uint, problemIDs []uint) ([]uint, error)
-	UpdateProblem(ctx context.Context, problemID string, data map[string]interface{}) error
-	DeleteProblem(ctx context.Context, id string) error
-	UpdateProblemTags(ctx context.Context, id string, tagIDs []uint) error
+	UpdateProblem(ctx context.Context, problemID uint, data map[string]interface{}) error
+	DeleteProblem(ctx context.Context, id uint) error
+	UpdateProblemTags(ctx context.Context, id uint, tagIDs []uint) error
 	GetAllProblemsWithTags(ctx context.Context) ([]model.Problem, error)
 	GetTagsByIDs(ctx context.Context, ids []uint) ([]model.Tag, error)
 }
@@ -45,9 +45,9 @@ func (r *problemRepoMysql) GetTagsByIDs(ctx context.Context, ids []uint) ([]mode
 	return tags, nil
 }
 
-func (r *problemRepoMysql) GetProblemByID(ctx context.Context, id string) (*model.Problem, error) {
+func (r *problemRepoMysql) GetProblemByID(ctx context.Context, id uint) (*model.Problem, error) {
 	var problem model.Problem
-	err := mysql.DB.WithContext(ctx).Preload("Tags").First(&problem, id).Error
+	err := mysql.DB.WithContext(ctx).Preload("Tags").Where("id = ?", id).First(&problem).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, apperror.ErrProblemNotFound
@@ -86,7 +86,7 @@ func (r *problemRepoMysql) GetUserACProblemIDs(ctx context.Context, uid uint, pr
 	return userACList, err
 }
 
-func (r *problemRepoMysql) UpdateProblem(ctx context.Context, problemID string, data map[string]interface{}) error {
+func (r *problemRepoMysql) UpdateProblem(ctx context.Context, problemID uint, data map[string]interface{}) error {
 	result := mysql.DB.WithContext(ctx).Model(&model.Problem{}).Where("id = ?", problemID).Updates(data)
 	if result.Error != nil {
 		return result.Error
@@ -97,10 +97,10 @@ func (r *problemRepoMysql) UpdateProblem(ctx context.Context, problemID string, 
 	return nil
 }
 
-func (r *problemRepoMysql) DeleteProblem(ctx context.Context, id string) error {
+func (r *problemRepoMysql) DeleteProblem(ctx context.Context, id uint) error {
 	return mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var problem model.Problem
-		if err := tx.First(&problem, id).Error; err != nil {
+		if err := tx.Where("id = ?", id).First(&problem).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return apperror.ErrProblemNotFound
 			}
@@ -123,10 +123,10 @@ func (r *problemRepoMysql) DeleteProblem(ctx context.Context, id string) error {
 	})
 }
 
-func (r *problemRepoMysql) UpdateProblemTags(ctx context.Context, id string, tagIDs []uint) error {
+func (r *problemRepoMysql) UpdateProblemTags(ctx context.Context, id uint, tagIDs []uint) error {
 	return mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var problem model.Problem
-		if err := tx.First(&problem, id).Error; err != nil {
+		if err := tx.Where("id = ?", id).First(&problem).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return apperror.ErrProblemNotFound
 			}

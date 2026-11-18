@@ -3,13 +3,13 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
 	"gojo/internal/chat/service"
 )
@@ -69,13 +69,12 @@ func (h *AgentToolHandler) GetFailedSubmissionDetail(c *gin.Context) {
 	if !ok {
 		return
 	}
-	submissionIDUint64, err := strconv.ParseUint(c.Param("submission_id"), 10, 64)
-	if err != nil {
-		response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "invalid submission id")
+	submissionID, ok := request.PathID(c, "submission_id", "invalid submission id")
+	if !ok {
 		return
 	}
 
-	data, err := h.svc.GetFailedSubmissionDetail(c.Request.Context(), userID, uint(submissionIDUint64))
+	data, err := h.svc.GetFailedSubmissionDetail(c.Request.Context(), userID, submissionID)
 	if err != nil {
 		switch {
 		case errors.Is(err, apperror.ErrForbidden):
@@ -128,7 +127,7 @@ func (h *AgentToolHandler) GetCandidateProblems(c *gin.Context) {
 }
 
 func (h *AgentToolHandler) GetProblemDetail(c *gin.Context) {
-	problemID, ok := parseProblemID(c)
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
 	if !ok {
 		return
 	}

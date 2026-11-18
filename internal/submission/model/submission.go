@@ -20,6 +20,6 @@ type Submission struct {
 	TimeCost   int    `json:"time_cost"`   // 实际运行耗时 (ms)
 	MemoryCost int    `json:"memory_cost"` // 实际消耗内存 (KB)
 
-	// 【新增】：专门用来存玩家代码跑出来的真实结果，或者是系统的报错追踪！
+	// New results store a fixed verdict message. Older rows may contain raw output.
 	ActualOutput string `gorm:"type:text" json:"actual_output"`
 }

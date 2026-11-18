@@ -66,7 +66,7 @@ func (s *TagService) CreateTag(ctx context.Context, name string) (*model.Tag, er
 	return &tag, nil
 }
 
-func (s *TagService) DeleteTag(ctx context.Context, tagID string) error {
+func (s *TagService) DeleteTag(ctx context.Context, tagID uint) error {
 	problemIDs, err := s.repo.DeleteTag(ctx, tagID)
 	if err != nil {
 		return err

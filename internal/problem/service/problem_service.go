@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"gojo/infrastructure/cache"
@@ -174,12 +173,12 @@ func (s *ProblemService) GetProblemList(ctx context.Context, page int, limit int
 	return res, nil
 }
 
-func (s *ProblemService) GetProblemDetail(ctx context.Context, problemID string) (*model.Problem, error) {
-	cacheKey := fmt.Sprintf("cache:problem:detail:%s", problemID)
+func (s *ProblemService) GetProblemDetail(ctx context.Context, problemID uint) (*model.Problem, error) {
+	cacheKey := fmt.Sprintf("cache:problem:detail:%d", problemID)
 	cachedData, err := cache.Rdb.Get(ctx, cacheKey).Result()
 	problem := &model.Problem{}
 	if err == nil {
-		fmt.Printf("cache hit for problem detail %s\n", problemID)
+		fmt.Printf("cache hit for problem detail %d\n", problemID)
 		if unmarshalErr := json.Unmarshal([]byte(cachedData), problem); unmarshalErr == nil {
 			return problem, nil
 		} else {
@@ -202,7 +201,7 @@ func (s *ProblemService) GetProblemDetail(ctx context.Context, problemID string)
 	return problem, nil
 }
 
-func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, req dto.ProblemRequest) error {
+func (s *ProblemService) UpdateProblem(ctx context.Context, problemID uint, req dto.ProblemRequest) error {
 	updateData := make(map[string]interface{})
 	if req.Title != "" {
 		updateData["title"] = req.Title
@@ -231,28 +230,28 @@ func (s *ProblemService) UpdateProblem(ctx context.Context, problemID string, re
 		return err
 	}
 
-	cacheutil.InvalidateProblem(ctx, uintID(problemID), "update")
-	s.enqueueProblemUpsert(ctx, uintID(problemID), "update")
+	cacheutil.InvalidateProblem(ctx, problemID, "update")
+	s.enqueueProblemUpsert(ctx, problemID, "update")
 	return nil
 }
 
-func (s *ProblemService) DeleteProblem(ctx context.Context, problemID string) error {
+func (s *ProblemService) DeleteProblem(ctx context.Context, problemID uint) error {
 	if err := s.repo.DeleteProblem(ctx, problemID); err != nil {
 		return err
 	}
 
-	cacheutil.InvalidateProblem(ctx, uintID(problemID), "delete")
-	s.enqueueProblemDelete(ctx, uintID(problemID), "delete")
+	cacheutil.InvalidateProblem(ctx, problemID, "delete")
+	s.enqueueProblemDelete(ctx, problemID, "delete")
 	return nil
 }
 
-func (s *ProblemService) UpdateProblemTags(ctx context.Context, problemID string, tagIDs []uint) error {
+func (s *ProblemService) UpdateProblemTags(ctx context.Context, problemID uint, tagIDs []uint) error {
 	if err := s.repo.UpdateProblemTags(ctx, problemID, tagIDs); err != nil {
 		return err
 	}
 
-	cacheutil.InvalidateProblem(ctx, uintID(problemID), "update tags")
-	s.enqueueProblemUpsert(ctx, uintID(problemID), "update tags")
+	cacheutil.InvalidateProblem(ctx, problemID, "update tags")
+	s.enqueueProblemUpsert(ctx, problemID, "update tags")
 	return nil
 }
 
@@ -313,12 +312,4 @@ func (s *ProblemService) enqueueProblemDelete(ctx context.Context, problemID uin
 	if err := s.syncer.EnqueueProblemDelete(ctx, problemID); err != nil {
 		log.Printf("enqueue problem %d delete sync after %s failed: %v", problemID, scene, err)
 	}
-}
-
-func uintID(value string) uint {
-	id, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return uint(id)
 }

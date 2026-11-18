@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"gojo/infrastructure/mysql"
+	judgeModel "gojo/internal/judge/model"
 	"gojo/internal/problem/cacheutil"
 	"gojo/internal/problem/model"
 	submodel "gojo/internal/submission/model"
@@ -17,7 +18,7 @@ import (
 type JudgeRepository interface {
 	GetProblemWithCases(ctx context.Context, problemID uint) (*model.Problem, error)
 	IsSubmissionPending(ctx context.Context, subID uint) (bool, error)
-	UpdateJudgeResult(ctx context.Context, subID, problemID, userID uint, status, output string, timeCost, memoryCost int) (bool, error)
+	UpdateJudgeResult(ctx context.Context, subID, problemID, userID uint, status judgeModel.JudgeStatus, timeCost, memoryCost int) (bool, error)
 }
 
 type judgeRepoMysql struct {
@@ -46,13 +47,13 @@ func (r *judgeRepoMysql) IsSubmissionPending(ctx context.Context, subID uint) (b
 // UpdateJudgeResult only transitions a Pending submission. This makes task
 // retries safe when a worker completed judging but failed before acknowledging
 // the Redis task.
-func (r *judgeRepoMysql) UpdateJudgeResult(ctx context.Context, subID, problemID, userID uint, status, output string, timeCost, memoryCost int) (bool, error) {
+func (r *judgeRepoMysql) UpdateJudgeResult(ctx context.Context, subID, problemID, userID uint, status judgeModel.JudgeStatus, timeCost, memoryCost int) (bool, error) {
 	firstAC := false
 	updated := false
 	err := mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&submodel.Submission{}).Where("id = ? AND status = ?", subID, "Pending").Updates(map[string]interface{}{
 			"status":        status,
-			"actual_output": output,
+			"actual_output": judgeModel.PublicMessage(status),
 			"time_cost":     timeCost,
 			"memory_cost":   memoryCost,
 		})
@@ -67,7 +68,7 @@ func (r *judgeRepoMysql) UpdateJudgeResult(ctx context.Context, subID, problemID
 		if err := tx.Model(&model.Problem{}).Where("id = ?", problemID).UpdateColumn("submit_count", gorm.Expr("submit_count + ?", 1)).Error; err != nil {
 			return err
 		}
-		if status != "AC" {
+		if status != judgeModel.StatusAccepted {
 			return nil
 		}
 		if err := tx.Model(&model.Problem{}).Where("id = ?", problemID).UpdateColumn("accepted_count", gorm.Expr("accepted_count + ?", 1)).Error; err != nil {

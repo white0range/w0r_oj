@@ -35,12 +35,17 @@
 
         <article class="card stack">
           <div class="section-title">
-            <h2>运行输出</h2>
+            <h2>判题说明</h2>
           </div>
-          <pre class="output-view mono">{{ submission.actualOutput || '当前没有输出信息。' }}</pre>
+          <pre class="output-view mono">{{ submission.actualOutput || '暂无判题说明。' }}</pre>
         </article>
       </section>
     </template>
+
+    <section v-else-if="loadFailed" class="empty-state" role="status">
+      <strong>暂时无法获取判题状态</strong>
+      <span class="muted">正在自动重试。</span>
+    </section>
 
     <section v-else class="empty-state">
       <strong>这条提交不存在</strong>
@@ -50,144 +55,34 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { createEventsTicket, getSubmission } from '../api'
+import { watchSubmissionStatus } from '../utils/submissionStatus'
 
 const route = useRoute()
-const routeId = computed(() => route.params.id)
 const loading = ref(true)
+const loadFailed = ref(false)
 const submission = ref(null)
+let stopWatchingSubmission
 
-let socket = null
-let pollTimer = null
-let socketFallbackTimer = null
-let suppressSocketFallback = false
-
-const SOCKET_FALLBACK_DELAY_MS = 4000
-const POLL_INTERVAL_MS = 2000
-
-function isPendingSubmission() {
-  return submission.value?.status === 'Pending'
-}
-
-async function fetchSubmission() {
-  try {
-    submission.value = await getSubmission(routeId.value)
-  } catch {
-    submission.value = null
-  } finally {
+watch(() => route.name === 'submission-detail' ? route.params.id : null, (id) => {
+  stopWatchingSubmission?.()
+  if (!id) return
+  loading.value = true
+  loadFailed.value = false
+  submission.value = null
+  stopWatchingSubmission = watchSubmissionStatus(id, (result) => {
+    submission.value = result
     loading.value = false
-  }
-
-  if (!isPendingSubmission()) {
-    stopSocketFallbackTimer()
-    stopPolling()
-    closeSocket()
-  }
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-function startPolling() {
-  if (!isPendingSubmission() || pollTimer) {
-    return
-  }
-
-  pollTimer = setInterval(fetchSubmission, POLL_INTERVAL_MS)
-}
-
-function stopSocketFallbackTimer() {
-  if (socketFallbackTimer) {
-    clearTimeout(socketFallbackTimer)
-    socketFallbackTimer = null
-  }
-}
-
-function closeSocket() {
-  if (socket) {
-    suppressSocketFallback = true
-    socket.close()
-    socket = null
-  }
-}
-
-async function openSocket(submissionId) {
-  closeSocket()
-  stopSocketFallbackTimer()
-  suppressSocketFallback = false
-
-  try {
-    const ticket = await createEventsTicket()
-    if (!ticket || !isPendingSubmission()) {
-      startPolling()
-      return
-    }
-    socket = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`)
-  } catch {
-    startPolling()
-    return
-  }
-
-  socketFallbackTimer = setTimeout(() => {
-    if (socket && socket.readyState !== EventSource.OPEN && isPendingSubmission()) {
-      startPolling()
-    }
-  }, SOCKET_FALLBACK_DELAY_MS)
-
-  socket.onopen = () => {
-    stopSocketFallbackTimer()
-    stopPolling()
-  }
-
-  socket.addEventListener('judge_result', (event) => {
-    try {
-      const payload = JSON.parse(event.data)
-      if (Number(payload.submission_id) === Number(submissionId)) {
-        void fetchSubmission()
-      }
-    } catch {}
+    loadFailed.value = false
+  }, (_, retrying) => {
+    loading.value = false
+    loadFailed.value = retrying
+    if (!retrying) submission.value = null
   })
+}, { immediate: true })
 
-  socket.onerror = () => {
-    if (socket) {
-      suppressSocketFallback = true
-      socket.close()
-      socket = null
-    }
-    if (isPendingSubmission()) {
-      startPolling()
-    }
-  }
-
-  socket.onclose = () => {
-    stopSocketFallbackTimer()
-    const shouldFallback = !suppressSocketFallback && isPendingSubmission()
-    suppressSocketFallback = false
-    socket = null
-    if (shouldFallback) {
-      startPolling()
-    }
-  }
-}
-onMounted(async () => {
-  await fetchSubmission()
-
-  if (isPendingSubmission()) {
-    openSocket(routeId.value)
-  }
-})
-
-onUnmounted(() => {
-  stopSocketFallbackTimer()
-  closeSocket()
-  stopPolling()
-})
+onUnmounted(() => stopWatchingSubmission?.())
 </script>
 
 <style scoped>

@@ -33,7 +33,7 @@ type esHandler struct {
 func (h *esHandler) Handle(ctx context.Context, task Task) error {
 	switch task.Action {
 	case ActionProblemUpsert:
-		problem, err := h.problems.GetProblemByID(ctx, strconv.FormatUint(uint64(task.EntityID), 10))
+		problem, err := h.problems.GetProblemByID(ctx, task.EntityID)
 		if err != nil {
 			return err
 		}

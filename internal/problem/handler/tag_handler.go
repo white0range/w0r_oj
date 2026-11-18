@@ -8,6 +8,7 @@ import (
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/service"
@@ -48,7 +49,10 @@ func (h *TagHandler) CreateTag(c *gin.Context) {
 }
 
 func (h *TagHandler) DeleteTag(c *gin.Context) {
-	tagID := c.Param("id")
+	tagID, ok := request.PathID(c, "id", "invalid tag id")
+	if !ok {
+		return
+	}
 
 	if err := h.svc.DeleteTag(c.Request.Context(), tagID); err != nil {
 		if errors.Is(err, apperror.ErrTagNotFound) {

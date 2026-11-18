@@ -171,7 +171,7 @@ export async function submitCode(payload) {
   return {
     submissionId: Number(data.submission_id || 0),
     status: data.status || 'Pending',
-    message: body.message || 'Submit succeeded',
+    dispatchPending: data.dispatch_pending === true,
   }
 }
 
@@ -180,13 +180,13 @@ export async function runProblemCode(problemId, payload, signal) {
   return unwrapData(body)
 }
 
-export async function getSubmission(id) {
-  const body = getBody(await api.get(`/submissions/${id}`))
+export async function getSubmission(id, signal) {
+  const body = getBody(await api.get(`/submissions/${id}`, { signal }))
   return normalizeSubmission(unwrapData(body))
 }
 
-export async function createEventsTicket() {
-  const body = getBody(await api.post('/events/ticket'))
+export async function createEventsTicket(signal) {
+  const body = getBody(await api.post('/events/ticket', null, { signal }))
   return unwrapData(body).ticket || ''
 }
 

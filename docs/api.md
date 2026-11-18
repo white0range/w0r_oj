@@ -18,10 +18,14 @@ Go API 提供 HTTP JSON 接口和 SSE。登录响应在 JSON 中返回 Access To
 | `POST /api/problems/search` | 公开 | 关键词与标签搜索 |
 | `POST /api/submit` | 已登录 | 提交代码并创建判题任务 |
 | `POST /api/problems/:id/run` | 已登录 | 用自定义输入运行当前编辑器里的 Go 代码 |
-| `GET /api/submissions/:id` | 已登录 | 查询自己的单条提交 |
+| `GET /api/submissions/:id` | 已登录 | 查询自己的单条提交，查不到时返回 HTTP 404 |
 | `GET /api/my-submissions` | 已登录 | 查询个人提交历史 |
 | `GET /api/leaderboard` | 公开，可选登录 | 读取排行榜与个人排名 |
 | `/api/admin/*` | 管理员 | 管理用户、题目、标签和测试用例 |
+
+正式判题接口和 Agent 失败提交工具中的 `actual_output` 是按判定生成的固定说明，历史提交也适用。自定义运行接口通过 `output` 返回该次运行的输出或编译诊断。
+
+`POST /api/submit` 在提交写入 MySQL 后返回 `submission_id` 和 `status: "Pending"`。若本次未能确认入队，`dispatch_pending` 为 `true`，后台会补发任务。页面可以用原提交 ID 查询结果。
 
 运行代码的请求体包含字符串 `code` 和 `input`，空字符串表示无输入。源码上限为 64 KiB，输入上限为 4 KiB。响应包含 `status`、`output`、`duration_ms`，输出截断时附带 `truncated`。用户每分钟最多发起 6 次运行，同时最多有 1 次运行在处理。运行与 Agent 试跑共用一个执行槽，排队、编译和执行合计最多 30 秒。正式提交记录和成绩由判题接口维护。
 
@@ -43,7 +47,7 @@ Go API 提供 HTTP JSON 接口和 SSE。登录响应在 JSON 中返回 Access To
 | `POST /api/chat/turns/:turn_id/stream-ticket` | 已登录 | 申请绑定当前回合的 SSE Ticket |
 | `GET /api/chat/turns/:turn_id/stream?ticket=…` | SSE Ticket | 订阅回合状态 |
 
-SSE Ticket 有效期为 60 秒，使用一次后即失效。重新订阅需要申请新 Ticket。提交和回合查询接口可用于连接中断后的状态确认。
+SSE Ticket 有效期为 60 秒，使用一次后即失效。重新订阅需要申请新 Ticket。等待判题期间，题目页和提交详情页在 SSE 连上时立即补查，并定期查询提交状态，直到拿到终态。
 
 ## Agent 内部接口
 

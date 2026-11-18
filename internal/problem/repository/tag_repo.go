@@ -13,7 +13,7 @@ import (
 type TagRepository interface {
 	GetTagList(ctx context.Context, tags *[]model.Tag) error
 	CreateTag(ctx context.Context, tag *model.Tag) error
-	DeleteTag(ctx context.Context, tagID string) ([]uint, error)
+	DeleteTag(ctx context.Context, tagID uint) ([]uint, error)
 }
 
 type TagRepositoryMysql struct{}
@@ -30,10 +30,10 @@ func (r *TagRepositoryMysql) CreateTag(ctx context.Context, tag *model.Tag) erro
 	return mysql.DB.WithContext(ctx).Create(&tag).Error
 }
 
-func (r *TagRepositoryMysql) DeleteTag(ctx context.Context, tagID string) (problemIDs []uint, err error) {
+func (r *TagRepositoryMysql) DeleteTag(ctx context.Context, tagID uint) (problemIDs []uint, err error) {
 	err = mysql.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tag model.Tag
-		if err := tx.First(&tag, tagID).Error; err != nil {
+		if err := tx.Where("id = ?", tagID).First(&tag).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return apperror.ErrTagNotFound
 			}

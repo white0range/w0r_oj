@@ -18,3 +18,9 @@ type SubmitRequest struct {
 	Language  string `json:"language" binding:"required,oneof=go"`
 	Code      string `json:"code" binding:"required,max=65536"`
 }
+
+type SubmitReceipt struct {
+	SubmissionID    uint   `json:"submission_id"`
+	Status          string `json:"status"`
+	DispatchPending bool   `json:"dispatch_pending"`
+}

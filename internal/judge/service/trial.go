@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"os"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -17,7 +16,7 @@ import (
 // RunTrial compiles one source buffer and runs only the supplied input.
 func RunTrial(ctx context.Context, problemID, submissionID uint, code, input string) trial.Result {
 	failure := trial.Result{Status: "system_error"}
-	problem, err := problemRepo.NewProblemRepository().GetProblemByID(ctx, strconv.FormatUint(uint64(problemID), 10))
+	problem, err := problemRepo.NewProblemRepository().GetProblemByID(ctx, problemID)
 	if err != nil || !limits.ValidTimeMS(problem.TimeLimit) || !limits.ValidMemoryMB(problem.MemoryLimit) {
 		return failure
 	}

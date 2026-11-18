@@ -9,6 +9,7 @@ import (
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/service"
@@ -23,7 +24,10 @@ func NewTestCaseHandler(s *service.TestCaseService) *TestCaseHandler {
 }
 
 func (h *TestCaseHandler) AddTestCase(c *gin.Context) {
-	problemIDStr := c.Param("id")
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	var req dto.TestCaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -31,11 +35,9 @@ func (h *TestCaseHandler) AddTestCase(c *gin.Context) {
 		return
 	}
 
-	id, err := h.svc.AddTestCase(c.Request.Context(), problemIDStr, req)
+	id, err := h.svc.AddTestCase(c.Request.Context(), problemID, req)
 	if err != nil {
 		switch {
-		case errors.Is(err, apperror.ErrInvalidID):
-			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "invalid problem id")
 		case errors.Is(err, apperror.ErrProblemNotFound):
 			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "problem not found")
 		default:
@@ -50,7 +52,10 @@ func (h *TestCaseHandler) AddTestCase(c *gin.Context) {
 }
 
 func (h *TestCaseHandler) DeleteTestCase(c *gin.Context) {
-	caseID := c.Param("case_id")
+	caseID, ok := request.PathID(c, "case_id", "invalid test case id")
+	if !ok {
+		return
+	}
 
 	if err := h.svc.DeleteTestCase(c.Request.Context(), caseID); err != nil {
 		if errors.Is(err, apperror.ErrCaseNotFound) {
@@ -65,19 +70,18 @@ func (h *TestCaseHandler) DeleteTestCase(c *gin.Context) {
 }
 
 func (h *TestCaseHandler) GetTestCases(c *gin.Context) {
-	problemIDStr := c.Param("id")
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
 	page, _ := strconv.Atoi(pageStr)
 	limit, _ := strconv.Atoi(limitStr)
 
-	res, err := h.svc.GetTestCases(c.Request.Context(), problemIDStr, page, limit)
+	res, err := h.svc.GetTestCases(c.Request.Context(), problemID, page, limit)
 	if err != nil {
-		if errors.Is(err, apperror.ErrInvalidID) {
-			response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "invalid problem id")
-			return
-		}
 		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "get test cases failed")
 		return
 	}

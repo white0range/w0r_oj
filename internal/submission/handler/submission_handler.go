@@ -6,10 +6,13 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
+	judgeModel "gojo/internal/judge/model"
 	"gojo/internal/submission/dto"
 	"gojo/internal/submission/service"
 )
@@ -41,7 +44,7 @@ func (h *SubmissionHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	submission, err := h.svc.SubmitCode(c.Request.Context(), userID, req)
+	receipt, err := h.svc.SubmitCode(c.Request.Context(), userID, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, apperror.ErrUnsupportedLanguage):
@@ -54,14 +57,14 @@ func (h *SubmissionHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	response.OK(c, gin.H{
-		"submission_id": submission.ID,
-		"status":        "Pending",
-	})
+	response.OK(c, receipt)
 }
 
 func (h *SubmissionHandler) GetSubmissionResult(c *gin.Context) {
-	id := c.Param("id")
+	id, valid := request.PathID(c, "id", "invalid submission id")
+	if !valid {
+		return
+	}
 
 	userIDRaw, exists := c.Get("userID")
 	if !exists {
@@ -77,11 +80,11 @@ func (h *SubmissionHandler) GetSubmissionResult(c *gin.Context) {
 
 	submission, err := h.svc.GetSubmissionResult(c.Request.Context(), id, currentUserID)
 	if err != nil {
-		if errors.Is(err, apperror.ErrUnauthorizedAccess) {
-			response.FailWithMessage(c, http.StatusForbidden, ecode.Forbidden, "cannot access other users' submissions")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "submission not found")
 			return
 		}
-		response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "submission not found")
+		response.FailWithMessage(c, http.StatusInternalServerError, ecode.InternalError, "get submission failed")
 		return
 	}
 
@@ -89,7 +92,7 @@ func (h *SubmissionHandler) GetSubmissionResult(c *gin.Context) {
 		"submission_id": submission.ID,
 		"problem_id":    submission.ProblemID,
 		"status":        submission.Status,
-		"actual_output": submission.ActualOutput,
+		"actual_output": judgeModel.PublicMessage(judgeModel.JudgeStatus(submission.Status)),
 		"code":          submission.Code,
 		"language":      submission.Language,
 	})

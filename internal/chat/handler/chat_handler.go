@@ -424,17 +424,6 @@ func parseTaskID(c *gin.Context) (uint, bool) {
 	return uint(taskIDUint64), true
 }
 
-func parseProblemID(c *gin.Context) (uint, bool) {
-	problemIDStr := c.Param("id")
-	problemIDUint64, err := strconv.ParseUint(problemIDStr, 10, 64)
-	if err != nil {
-		response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "invalid problem id")
-		return 0, false
-	}
-
-	return uint(problemIDUint64), true
-}
-
 func parsePositiveIntQuery(c *gin.Context, key string, defaultValue int) int {
 	valueStr := c.Query(key)
 	if valueStr == "" {

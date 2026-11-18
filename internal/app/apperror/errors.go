@@ -11,12 +11,10 @@ var (
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrUserBanned         = errors.New("user banned")
 
-	ErrUnauthorizedAccess = errors.New("unauthorized access")
-	ErrForbidden          = errors.New("forbidden")
-	ErrAlreadyAccepted    = errors.New("already accepted")
-	ErrChatSessionBusy    = errors.New("chat session has active turn")
+	ErrForbidden       = errors.New("forbidden")
+	ErrAlreadyAccepted = errors.New("already accepted")
+	ErrChatSessionBusy = errors.New("chat session has active turn")
 
-	ErrInvalidID            = errors.New("invalid id")
 	ErrProblemNotFound      = errors.New("problem not found")
 	ErrUnsupportedLanguage  = errors.New("unsupported language")
 	ErrInvalidProblemLimits = errors.New("invalid problem resource limits")

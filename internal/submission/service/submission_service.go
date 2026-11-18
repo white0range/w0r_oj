@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"log"
 
 	"gojo/internal/app/apperror"
 	judgeDTO "gojo/internal/judge/dto"
@@ -16,27 +16,31 @@ import (
 )
 
 type problemReader interface {
-	GetProblemByID(ctx context.Context, id string) (*problemModel.Problem, error)
+	GetProblemByID(ctx context.Context, id uint) (*problemModel.Problem, error)
+}
+
+type judgeEnqueuer interface {
+	Enqueue(context.Context, judgeDTO.JudgeTask) (bool, error)
 }
 
 type SubmissionService struct {
 	repo     repository.SubmissionRepository
 	problems problemReader
-	queue    *judgeQueue.Queue
+	queue    judgeEnqueuer
 }
 
 func NewSubmissionService(r repository.SubmissionRepository, problems problemReader) *SubmissionService {
 	return &SubmissionService{repo: r, problems: problems, queue: judgeQueue.New()}
 }
 
-func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto.SubmitRequest) (*model.Submission, error) {
+func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto.SubmitRequest) (*dto.SubmitReceipt, error) {
 	if req.Language != "go" {
 		return nil, apperror.ErrUnsupportedLanguage
 	}
 	if s.problems == nil {
 		return nil, errors.New("problem repository is not configured")
 	}
-	if _, err := s.problems.GetProblemByID(ctx, strconv.FormatUint(uint64(req.ProblemID), 10)); err != nil {
+	if _, err := s.problems.GetProblemByID(ctx, req.ProblemID); err != nil {
 		if errors.Is(err, apperror.ErrProblemNotFound) {
 			return nil, apperror.ErrProblemNotFound
 		}
@@ -48,6 +52,7 @@ func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto
 		ProblemID: req.ProblemID,
 		Language:  req.Language,
 		Code:      req.Code,
+		Status:    "Pending",
 	}
 
 	if err := s.repo.CreateSubmission(ctx, &submission); err != nil {
@@ -55,26 +60,17 @@ func (s *SubmissionService) SubmitCode(ctx context.Context, userID uint, req dto
 	}
 
 	task := judgeDTO.NewJudgeTask(submission.ID, req.ProblemID, userID, req.Code)
+	receipt := &dto.SubmitReceipt{SubmissionID: submission.ID, Status: submission.Status}
 	if _, err := s.queue.Enqueue(ctx, task); err != nil {
-		// Keep the record Pending so the worker's MySQL reconciler can enqueue it
-		// after a temporary Redis outage instead of losing the submission.
-		return nil, fmt.Errorf("enqueue judge task failed: %w", err)
+		receipt.DispatchPending = true
+		log.Printf("submission_id=%d saved, judge dispatch pending: %v", submission.ID, err)
 	}
 
-	return &submission, nil
+	return receipt, nil
 }
 
-func (s *SubmissionService) GetSubmissionResult(ctx context.Context, submissionID string, currentUserID uint) (*model.Submission, error) {
-	submission, err := s.repo.GetSubmissionByID(ctx, submissionID)
-	if err != nil {
-		return nil, err
-	}
-
-	if submission.UserID != currentUserID {
-		return nil, apperror.ErrUnauthorizedAccess
-	}
-
-	return submission, nil
+func (s *SubmissionService) GetSubmissionResult(ctx context.Context, submissionID, currentUserID uint) (*model.Submission, error) {
+	return s.repo.GetSubmissionByUserID(ctx, submissionID, currentUserID)
 }
 
 func (s *SubmissionService) GetMySubmissions(ctx context.Context, userID uint, page, limit int) (*dto.MySubmissionsResponse, error) {

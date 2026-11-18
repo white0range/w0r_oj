@@ -9,6 +9,7 @@ import (
 
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/service"
@@ -70,7 +71,10 @@ func (h *ProblemHandler) GetProblemList(c *gin.Context) {
 }
 
 func (h *ProblemHandler) GetProblemDetail(c *gin.Context) {
-	id := c.Param("id")
+	id, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	problem, err := h.svc.GetProblemDetail(c.Request.Context(), id)
 	if err != nil {
@@ -86,7 +90,10 @@ func (h *ProblemHandler) GetProblemDetail(c *gin.Context) {
 }
 
 func (h *ProblemHandler) UpdateProblem(c *gin.Context) {
-	problemID := c.Param("id")
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	var req dto.ProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -110,7 +117,10 @@ func (h *ProblemHandler) UpdateProblem(c *gin.Context) {
 }
 
 func (h *ProblemHandler) DeleteProblem(c *gin.Context) {
-	problemID := c.Param("id")
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	if err := h.svc.DeleteProblem(c.Request.Context(), problemID); err != nil {
 		if errors.Is(err, apperror.ErrProblemNotFound) {
@@ -125,7 +135,10 @@ func (h *ProblemHandler) DeleteProblem(c *gin.Context) {
 }
 
 func (h *ProblemHandler) UpdateProblemTags(c *gin.Context) {
-	problemID := c.Param("id")
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
+		return
+	}
 
 	var req dto.UpdateProblemTagsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

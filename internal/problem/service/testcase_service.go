@@ -3,9 +3,7 @@ package service
 import (
 	"context"
 	"log"
-	"strconv"
 
-	"gojo/internal/app/apperror"
 	"gojo/internal/problem/cacheutil"
 	"gojo/internal/problem/dto"
 	"gojo/internal/problem/model"
@@ -22,14 +20,9 @@ func NewTestCaseService(r repository.TestCaseRepository, producer syncer.Produce
 	return &TestCaseService{repo: r, syncer: producer}
 }
 
-func (s *TestCaseService) AddTestCase(ctx context.Context, problemIDStr string, req dto.TestCaseRequest) (uint, error) {
-	problemID, err := strconv.Atoi(problemIDStr)
-	if err != nil {
-		return 0, apperror.ErrInvalidID
-	}
-
+func (s *TestCaseService) AddTestCase(ctx context.Context, problemID uint, req dto.TestCaseRequest) (uint, error) {
 	testCase := model.TestCase{
-		ProblemID:      uint(problemID),
+		ProblemID:      problemID,
 		Input:          req.Input,
 		ExpectedOutput: req.ExpectedOutput,
 	}
@@ -46,7 +39,7 @@ func (s *TestCaseService) AddTestCase(ctx context.Context, problemIDStr string, 
 	return testCase.ID, nil
 }
 
-func (s *TestCaseService) DeleteTestCase(ctx context.Context, caseID string) error {
+func (s *TestCaseService) DeleteTestCase(ctx context.Context, caseID uint) error {
 	problemID, err := s.repo.DeleteTestCase(ctx, caseID)
 	if err != nil {
 		return err
@@ -58,12 +51,7 @@ func (s *TestCaseService) DeleteTestCase(ctx context.Context, caseID string) err
 	}
 	return nil
 }
-func (s *TestCaseService) GetTestCases(ctx context.Context, problemIDStr string, page, limit int) (*dto.TestCaseListResponse, error) {
-	problemID, err := strconv.Atoi(problemIDStr)
-	if err != nil {
-		return nil, apperror.ErrInvalidID
-	}
-
+func (s *TestCaseService) GetTestCases(ctx context.Context, problemID uint, page, limit int) (*dto.TestCaseListResponse, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -71,10 +59,12 @@ func (s *TestCaseService) GetTestCases(ctx context.Context, problemIDStr string,
 		limit = 20
 	}
 
+	total, items, err := s.repo.GetTestCase(ctx, problemID, page, limit)
 	res := &dto.TestCaseListResponse{
 		Page:  page,
 		Limit: limit,
+		Total: total,
+		Items: items,
 	}
-	res.Total, res.Items, err = s.repo.GetTestCase(ctx, uint(problemID), page, limit)
 	return res, err
 }

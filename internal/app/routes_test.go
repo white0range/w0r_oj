@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"gojo/config"
+	problemHandler "gojo/internal/problem/handler"
 )
 
 func TestAgentRoutesAreIndependentOfAdminAndUserAuth(t *testing.T) {
@@ -87,5 +88,22 @@ func TestRunCodeRequiresUserAuthentication(t *testing.T) {
 	router.ServeHTTP(result, request)
 	if result.Code != http.StatusUnauthorized {
 		t.Fatalf("run code status=%d, want=%d", result.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestProblemDetailRejectsInvalidPathID(t *testing.T) {
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = config.Config{}
+	gin.SetMode(gin.TestMode)
+	router := SetupRouter(nil, problemHandler.NewProblemHandler(nil), nil, nil, nil, nil, nil, nil, nil)
+	for _, id := range []string{"invalid", "0", "-1", "18446744073709551616"} {
+		t.Run(id, func(t *testing.T) {
+			result := httptest.NewRecorder()
+			router.ServeHTTP(result, httptest.NewRequest(http.MethodGet, "/api/problems/"+id, nil))
+			if result.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d, want=%d", result.Code, http.StatusBadRequest)
+			}
+		})
 	}
 }

@@ -15,7 +15,7 @@ type failedSubmissionProviderStub struct {
 	err        error
 }
 
-func (s *failedSubmissionProviderStub) GetSubmissionByID(context.Context, string) (*submissionModel.Submission, error) {
+func (s *failedSubmissionProviderStub) GetSubmissionByID(context.Context, uint) (*submissionModel.Submission, error) {
 	return s.submission, s.err
 }
 
@@ -24,7 +24,7 @@ func (s *failedSubmissionProviderStub) GetAllSubmissionsByUserID(context.Context
 }
 
 func (s *failedSubmissionProviderStub) GetRecentFailedSubmissionsByUserID(context.Context, uint, int) ([]submissionModel.Submission, error) {
-	return nil, nil
+	return []submissionModel.Submission{*s.submission}, s.err
 }
 
 type problemCatalogProviderStub struct {
@@ -36,18 +36,18 @@ func (s *problemCatalogProviderStub) GetAllProblemsWithTags(context.Context) ([]
 	return nil, nil
 }
 
-func (s *problemCatalogProviderStub) GetProblemByID(context.Context, string) (*problemModel.Problem, error) {
+func (s *problemCatalogProviderStub) GetProblemByID(context.Context, uint) (*problemModel.Problem, error) {
 	return s.problem, s.err
 }
 
-func TestGetFailedSubmissionDetailReturnsCodeAndProblemContext(t *testing.T) {
+func TestAgentFailureToolsReturnVerdictInsteadOfStoredOutput(t *testing.T) {
 	submission := &submissionModel.Submission{
 		UserID:       7,
 		ProblemID:    40,
 		Language:     "go",
 		Code:         "package main",
 		Status:       "WA",
-		ActualOutput: "wrong answer on test case 2",
+		ActualOutput: "legacy hidden output marker",
 	}
 	submission.ID = 99
 	problem := &problemModel.Problem{
@@ -67,6 +67,16 @@ func TestGetFailedSubmissionDetailReturnsCodeAndProblemContext(t *testing.T) {
 	}
 	if len(detail.ProblemTags) != 1 || detail.ProblemTags[0] != "graph" {
 		t.Fatalf("unexpected problem tags: %v", detail.ProblemTags)
+	}
+	if want := "输出与预期不符。"; detail.ActualOutput != want {
+		t.Fatalf("detail output=%q, want %q", detail.ActualOutput, want)
+	}
+	recent, err := svc.GetUserFailedSubmissions(context.Background(), 7, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent.Items) != 1 || recent.Items[0].ActualOutput != detail.ActualOutput {
+		t.Fatalf("recent failures did not return the fixed verdict message: %+v", recent.Items)
 	}
 }
 

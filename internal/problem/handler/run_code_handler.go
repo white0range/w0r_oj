@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"gojo/config"
 	"gojo/internal/app/apperror"
 	"gojo/internal/app/ecode"
+	"gojo/internal/app/request"
 	"gojo/internal/app/response"
 	"gojo/internal/judge/trial"
 )
@@ -23,29 +23,28 @@ func (h *ProblemHandler) RunCode(c *gin.Context) {
 		response.FailWithMessage(c, http.StatusServiceUnavailable, ecode.InternalError, "代码运行暂未启用")
 		return
 	}
-	problemID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
-	if err != nil || problemID == 0 {
-		response.Fail(c, http.StatusBadRequest, ecode.InvalidParams)
+	problemID, ok := request.PathID(c, "id", "invalid problem id")
+	if !ok {
 		return
 	}
-	var request struct {
+	var body struct {
 		Code  string  `json:"code"`
 		Input *string `json:"input"`
 	}
 	// JSON can use up to six bytes to encode one byte of the submitted text.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 6*(trial.MaxCodeBytes+trial.MaxInputBytes)+1024)
-	if err := c.ShouldBindJSON(&request); err != nil || request.Input == nil || strings.TrimSpace(request.Code) == "" {
+	if err := c.ShouldBindJSON(&body); err != nil || body.Input == nil || strings.TrimSpace(body.Code) == "" {
 		response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "请填写 Go 代码和标准输入，标准输入可以为空")
 		return
 	}
-	if len(request.Code) > trial.MaxCodeBytes || len(*request.Input) > trial.MaxInputBytes {
+	if len(body.Code) > trial.MaxCodeBytes || len(*body.Input) > trial.MaxInputBytes {
 		response.FailWithMessage(c, http.StatusBadRequest, ecode.InvalidParams, "代码最多 64 KiB，输入最多 4 KiB")
 		return
 	}
 	deadline := time.Now().Add(trial.Timeout)
 	ctx, cancel := context.WithDeadline(c.Request.Context(), deadline)
 	defer cancel()
-	if _, err := h.svc.GetProblemDetail(ctx, strconv.FormatUint(problemID, 10)); err != nil {
+	if _, err := h.svc.GetProblemDetail(ctx, problemID); err != nil {
 		if errors.Is(err, apperror.ErrProblemNotFound) {
 			response.FailWithMessage(c, http.StatusNotFound, ecode.NotFound, "题目不存在")
 			return
@@ -55,8 +54,8 @@ func (h *ProblemHandler) RunCode(c *gin.Context) {
 	}
 
 	task := trial.Task{
-		Input: *request.Input, Deadline: deadline,
-		CodeRun: &trial.CodeRun{ID: rand.Text(), UserID: c.GetUint("userID"), ProblemID: uint(problemID), Code: request.Code},
+		Input: *body.Input, Deadline: deadline,
+		CodeRun: &trial.CodeRun{ID: rand.Text(), UserID: c.GetUint("userID"), ProblemID: problemID, Code: body.Code},
 	}
 	if err := trial.Enqueue(ctx, task); err != nil {
 		switch {

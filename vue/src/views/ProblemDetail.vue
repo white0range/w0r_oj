@@ -97,7 +97,7 @@
             <div v-if="submitState" role="status" aria-live="polite" class="submit-feedback" :class="submitState.kind">
               <div>
                 <strong>{{ submitState.title }}</strong>
-                <p>{{ submitState.message }}</p>
+                <p v-if="submitState.message">{{ submitState.message }}</p>
               </div>
               <router-link
                 v-if="submitState.submissionId"
@@ -122,10 +122,11 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { createEventsTicket, getErrorMessage, getProblemDetail, getSubmission, runProblemCode, submitCode } from '../api'
+import { getErrorMessage, getProblemDetail, runProblemCode, submitCode } from '../api'
 import GoCodeEditor from '../components/GoCodeEditor.vue'
 import { store } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
+import { watchSubmissionStatus } from '../utils/submissionStatus'
 
 const route = useRoute()
 const loading = ref(true)
@@ -139,18 +140,10 @@ const running = ref(false)
 const runResult = ref(null)
 const runError = ref('')
 const submitState = ref(null)
-const currentSubmissionId = ref(0)
-
-let socket = null
-let pollTimer = null
-let socketFallbackTimer = null
-let suppressSocketFallback = false
+let stopWatchingSubmission
 let runController = null
 let problemRequest = 0
 let submitRequest = 0
-
-const SOCKET_FALLBACK_DELAY_MS = 4000
-const POLL_INTERVAL_MS = 2000
 
 const starterCode = 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello Gojo")\n}\n'
 const runStatusLabels = {
@@ -173,10 +166,6 @@ const renderedDescription = computed(() => {
   return escaped.replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>').replace(/\n/g, '<br>')
 })
 
-function isSubmissionPending() {
-  return currentSubmissionId.value > 0 && submitState.value?.kind === 'pending'
-}
-
 async function fetchProblem() {
   const id = route.params.id
   const request = ++problemRequest
@@ -192,127 +181,9 @@ async function fetchProblem() {
   }
 }
 
-function closeSocket() {
-  if (socket) {
-    suppressSocketFallback = true
-    socket.close()
-    socket = null
-  }
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-function stopSocketFallbackTimer() {
-  if (socketFallbackTimer) {
-    clearTimeout(socketFallbackTimer)
-    socketFallbackTimer = null
-  }
-}
-
-function startPolling() {
-  if (!isSubmissionPending() || pollTimer) {
-    return
-  }
-
-  pollTimer = setInterval(refreshSubmission, POLL_INTERVAL_MS)
-}
-
-async function refreshSubmission() {
-  const submissionId = currentSubmissionId.value
-  if (!submissionId) {
-    return
-  }
-
-  try {
-    const submission = await getSubmission(submissionId)
-    if (submissionId !== currentSubmissionId.value) return
-    if (submission.status !== 'Pending') {
-      submitState.value = {
-        kind: submission.status === 'AC' ? 'success' : 'warning',
-        title: `判题完成：${submission.status}`,
-        message: submission.actualOutput || '可以点击下方按钮查看完整判题信息。',
-        submissionId: submission.id,
-      }
-      stopSocketFallbackTimer()
-      stopPolling()
-      closeSocket()
-      fetchProblem()
-    }
-  } catch {
-    startPolling()
-  }
-}
-
-async function openSocket(submissionId) {
-  if (!store.isLoggedIn) {
-    startPolling()
-    return
-  }
-
-  closeSocket()
-  stopSocketFallbackTimer()
-  suppressSocketFallback = false
-
-  try {
-    const ticket = await createEventsTicket()
-    if (!ticket || submissionId !== currentSubmissionId.value || !isSubmissionPending()) {
-      startPolling()
-      return
-    }
-    socket = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`)
-  } catch {
-    startPolling()
-    return
-  }
-
-  socketFallbackTimer = setTimeout(() => {
-    if (socket && socket.readyState !== EventSource.OPEN && isSubmissionPending()) {
-      startPolling()
-    }
-  }, SOCKET_FALLBACK_DELAY_MS)
-
-  socket.onopen = () => {
-    stopSocketFallbackTimer()
-    stopPolling()
-  }
-
-  socket.addEventListener('judge_result', (event) => {
-    try {
-      const payload = JSON.parse(event.data)
-      if (Number(payload.submission_id) === Number(submissionId)) {
-        void refreshSubmission()
-      }
-    } catch {}
-  })
-
-  socket.onerror = () => {
-    if (socket) {
-      suppressSocketFallback = true
-      socket.close()
-      socket = null
-    }
-    if (isSubmissionPending()) {
-      startPolling()
-    }
-  }
-
-  socket.onclose = () => {
-    stopSocketFallbackTimer()
-    const shouldFallback = !suppressSocketFallback && isSubmissionPending()
-    suppressSocketFallback = false
-    socket = null
-    if (shouldFallback) {
-      startPolling()
-    }
-  }
-}
 async function handleSubmit() {
   const request = ++submitRequest
+  stopWatchingSubmission?.()
   submitting.value = true
   submitState.value = null
 
@@ -324,16 +195,31 @@ async function handleSubmit() {
     })
     if (request !== submitRequest) return
 
-    currentSubmissionId.value = result.submissionId
     submitState.value = {
       kind: 'pending',
-      title: '提交成功，正在排队判题',
-      message: result.message,
+      title: result.dispatchPending ? '提交已保存，等待调度' : '提交成功，正在排队判题',
+      message: result.dispatchPending ? '系统会自动安排判题，无需重复提交。' : '',
       submissionId: result.submissionId,
     }
 
-    stopPolling()
-    openSocket(result.submissionId)
+    stopWatchingSubmission = watchSubmissionStatus(result.submissionId, (submission) => {
+      if (submission.status === 'Pending') return
+      submitState.value = {
+        kind: submission.status === 'AC' ? 'success' : 'warning',
+        title: `判题完成：${submission.status}`,
+        message: submission.actualOutput || '可以点击下方按钮查看判题详情。',
+        submissionId: submission.id,
+      }
+      void fetchProblem()
+    }, (_, retrying) => {
+      if (!retrying) {
+        submitState.value = {
+          kind: 'warning',
+          title: '暂时无法查看判题结果',
+          submissionId: result.submissionId,
+        }
+      }
+    })
   } catch (requestError) {
     if (request !== submitRequest) return
     submitState.value = {
@@ -385,13 +271,10 @@ watch(draftKey, (key) => {
   runInput.value = ''
   runResult.value = null
   runError.value = ''
-  currentSubmissionId.value = 0
   submitState.value = null
   submitting.value = false
   submitRequest++
-  stopSocketFallbackTimer()
-  closeSocket()
-  stopPolling()
+  stopWatchingSubmission?.()
 
   draftStorageUnavailable.value = false
   code.value = key ? starterCode : ''
@@ -407,12 +290,9 @@ watch(() => route.params.id, fetchProblem, { immediate: true })
 onUnmounted(() => {
   problemRequest++
   submitRequest++
-  currentSubmissionId.value = 0
   runController?.abort()
   runController = null
-  stopSocketFallbackTimer()
-  closeSocket()
-  stopPolling()
+  stopWatchingSubmission?.()
 })
 </script>
 
