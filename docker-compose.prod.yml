@@ -24,6 +24,7 @@ services:
     stop_grace_period: 165s
     environment:
       APP_ENV: production
+      GOJO_JUDGE_TRIAL_ENABLED: "${GOJO_JUDGE_TRIAL_ENABLED:-true}"
       GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
       GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}
       GOJO_JWT_SECRET: ${GOJO_JWT_SECRET:?set GOJO_JWT_SECRET in .env.local-production}
@@ -52,6 +53,7 @@ services:
     stop_grace_period: 165s
     environment:
       APP_ENV: production
+      GOJO_JUDGE_TRIAL_ENABLED: "${GOJO_JUDGE_TRIAL_ENABLED:-true}"
       TMPDIR: ${JUDGE_WORK_DIR:-/tmp/gojo-judge}
       GOJO_SQL_DSN: ${GOJO_SQL_DSN:?set GOJO_SQL_DSN in .env.local-production}
       GOJO_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.local-production}

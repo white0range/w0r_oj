@@ -57,7 +57,7 @@ func main() {
 	judgeRepository := judgeRepo.NewJudgeRepository(syncer.NewProducer())
 	judgeService := judgeSvc.NewJudgeService(judgeRepository)
 	worker := judgeWorker.NewJudgeWorker(judgeService, submissions)
-	worker.StartWorkerPool(config.GlobalConfig.Judge.WorkerCount)
+	worker.StartWorkerPool(config.GlobalConfig.Judge.WorkerCount, config.GlobalConfig.Judge.TrialEnabled)
 	log.Printf("judge worker started: workers=%d", config.GlobalConfig.Judge.WorkerCount)
 
 	<-shutdownSignalCtx.Done()

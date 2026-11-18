@@ -68,8 +68,9 @@ type ElasticsearchConfig struct {
 }
 
 type JudgeConfig struct {
-	WorkerCount           int `mapstructure:"worker_count"`
-	CompileTimeoutSeconds int `mapstructure:"compile_timeout_seconds"`
+	TrialEnabled          bool `mapstructure:"trial_enabled"`
+	WorkerCount           int  `mapstructure:"worker_count"`
+	CompileTimeoutSeconds int  `mapstructure:"compile_timeout_seconds"`
 }
 
 type RateLimitConfig struct {
@@ -137,6 +138,7 @@ func initConfig(validate func(Config, string) error) {
 
 	viper.SetDefault("elasticsearch.addresses", []string{"http://localhost:9200"})
 	viper.SetDefault("judge.worker_count", 3)
+	viper.SetDefault("judge.trial_enabled", false)
 	viper.SetDefault("judge.compile_timeout_seconds", 45)
 	viper.SetDefault("chat.worker_count", 3)
 	viper.SetDefault("chat.agent_base_url", "http://localhost:8000")
@@ -191,6 +193,7 @@ func bindEnvironment() error {
 		"ai.base_url",
 		"ai.model",
 		"judge.worker_count",
+		"judge.trial_enabled",
 		"chat.worker_count",
 		"chat.agent_service_token",
 	} {

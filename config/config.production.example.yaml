@@ -43,6 +43,7 @@ elasticsearch:
     - "http://elasticsearch:9200"
 
 judge:
+  trial_enabled: true
   worker_count: 3
   compile_timeout_seconds: 45
 

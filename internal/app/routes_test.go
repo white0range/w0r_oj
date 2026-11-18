@@ -26,10 +26,15 @@ func TestAgentRoutesAreIndependentOfAdminAndUserAuth(t *testing.T) {
 		"/api/agent/me/tag-stats",
 		"/api/agent/problems/candidates",
 		"/api/agent/problems/1",
+		"/api/agent/trials",
 	} {
 		t.Run(path, func(t *testing.T) {
+			method := http.MethodGet
+			if path == "/api/agent/trials" {
+				method = http.MethodPost
+			}
 			for _, serviceKey := range []string{"", "wrong", "test-service-secret"} {
-				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req := httptest.NewRequest(method, path, nil)
 				req.Header.Set("Authorization", "Bearer user-jwt")
 				req.Header.Set("X-Agent-Service-Token", serviceKey)
 				res := httptest.NewRecorder()

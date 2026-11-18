@@ -57,6 +57,7 @@ func SetupRouter(
 	agentGroup.Use(middlewares2.AgentAuth(), middlewares2.AgentTurnContext(chatRepository.NewChatRepository()))
 	{
 		agentGroup.GET("/context", agentHandler.GetExecutionContext)
+		agentGroup.POST("/trials", agentHandler.RunTrial)
 		agentGroup.GET("/me/ac-history", agentHandler.GetUserACHistory)
 		agentGroup.GET("/me/failed-submissions", agentHandler.GetUserFailedSubmissions)
 		agentGroup.GET("/me/failed-submissions/:submission_id", agentHandler.GetFailedSubmissionDetail)

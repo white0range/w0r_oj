@@ -42,6 +42,7 @@ elasticsearch:
     - "http://localhost:9200"
 
 judge:
+  trial_enabled: false
   worker_count: 3
   compile_timeout_seconds: 45
 

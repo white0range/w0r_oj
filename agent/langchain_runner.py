@@ -1,11 +1,12 @@
 import os
 import re
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import StructuredTool
 from langchain_deepseek import ChatDeepSeek
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from client import AgentToolAuth, AgentExecutionExpired, require_active_execution
@@ -13,6 +14,7 @@ from rag.memory_service import search_user_memories
 from schemas import ChatResult, RecommendedProblem
 from tracing import trace_step, trace_event, console_callbacks
 from tool_executor import ToolExecutionContext, build_query_variants, execute_tool
+from wrong_answer_workflow import is_wrong_answer_request, run_wrong_answer_workflow
 
 
 SUMMARY_MAX_CHARS = 1800
@@ -32,7 +34,7 @@ def _normalize_base_url() -> str | None:
     return base_url
 
 
-def _build_model() -> ChatDeepSeek:
+def _build_model(timeout_cap: int | None = None) -> ChatDeepSeek:
     api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("Please set DEEPSEEK_API_KEY or OPENAI_API_KEY first.")
@@ -43,6 +45,9 @@ def _build_model() -> ChatDeepSeek:
         "temperature": 0,
         "timeout": int(os.getenv("AGENT_LLM_TIMEOUT_SECONDS", "120")),
     }
+    if timeout_cap is not None:
+        kwargs["timeout"] = min(kwargs["timeout"], timeout_cap)
+        kwargs["max_retries"] = 0
     base_url = _normalize_base_url()
     if base_url:
         kwargs["base_url"] = base_url
@@ -385,19 +390,21 @@ def summarize_chat_session(existing_summary: str = "", messages: list[dict[str, 
     return _truncate_text(fallback)
 
 
-def run_chat_with_langchain(
-    user_id: int,
+class ChatState(TypedDict):
+    query: str
+    result: NotRequired[ChatResult]
+
+
+def _run_general_chat(
+    guard: ExecutionGuard,
     goal: str,
-    auth: AgentToolAuth,
-    session_summary: str = "",
-    messages: list[dict[str, Any]] | None = None,
+    session_summary: str,
+    messages: list[dict[str, Any]],
+    query: str,
 ) -> ChatResult:
-    guard = ExecutionGuard(auth, user_id)
-    guard.check()
+    user_id, auth = guard.user_id, guard.auth
     debug_enabled = _is_debug_enabled()
-    normalized_messages = messages or []
-    latest_user_query = _latest_user_query(goal, normalized_messages) or "general oj study chat"
-    memory_context = _load_memory_context(user_id=user_id, query_text=latest_user_query, debug_enabled=debug_enabled)
+    memory_context = _load_memory_context(user_id=user_id, query_text=query, debug_enabled=debug_enabled)
     context = ToolExecutionContext()
 
     agent = create_agent(
@@ -415,7 +422,7 @@ def run_chat_with_langchain(
             "自然语言检索优先使用 hybrid_candidate_problems；标签明确时使用 candidate_problems；只有混合检索仍不足时才使用 semantic_candidate_problems。"
             "会话摘要和长期记忆只能作为辅助上下文，应优先满足最新用户请求。"
             "可参考的标准化查询变体包括："
-            f"{', '.join(build_query_variants(latest_user_query))}。"
+            f"{', '.join(build_query_variants(query))}。"
             "完成后不要调用任何特殊的结束工具。"
             "请严格使用以下纯文本格式回复：\n"
             "ANSWER:\n"
@@ -431,7 +438,7 @@ def run_chat_with_langchain(
         user_id=user_id,
         goal=goal,
         session_summary=session_summary,
-        messages=normalized_messages,
+        messages=messages,
         memory_context=memory_context,
     )
 
@@ -448,3 +455,34 @@ def run_chat_with_langchain(
         parsed = _parse_plain_text_result(final_text)
     guard.check()
     return parsed
+
+
+def run_chat_with_langchain(
+    user_id: int,
+    goal: str,
+    auth: AgentToolAuth,
+    session_summary: str = "",
+    messages: list[dict[str, Any]] | None = None,
+) -> ChatResult:
+    guard = ExecutionGuard(auth, user_id)
+    guard.check()
+    messages = messages or []
+    query = _latest_user_query(goal, messages) or "general oj study chat"
+
+    def route(state: ChatState):
+        return "wrong_answer" if is_wrong_answer_request(state["query"]) else "general_chat"
+
+    def wrong_answer(state: ChatState):
+        result = run_wrong_answer_workflow(_build_model(timeout_cap=20), state["query"], messages, auth, guard.check)
+        return {"result": result}
+
+    def general_chat(state: ChatState):
+        return {"result": _run_general_chat(guard, goal, session_summary, messages, state["query"])}
+
+    graph = StateGraph(ChatState)
+    graph.add_node("wrong_answer", wrong_answer)
+    graph.add_node("general_chat", general_chat)
+    graph.add_conditional_edges(START, route, ["wrong_answer", "general_chat"])
+    graph.add_edge("wrong_answer", END)
+    graph.add_edge("general_chat", END)
+    return graph.compile().invoke({"query": query})["result"]

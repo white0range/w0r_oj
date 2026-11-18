@@ -129,6 +129,8 @@ func CompileCode(ctx context.Context, code string, workDir string, submissionID 
 		}
 	case status := <-statusCh:
 		return finalizeCompileResult(ctx, resp.ID, int64(status.StatusCode))
+	case <-ctx.Done():
+		return false, "", ctx.Err()
 	case <-timeoutCh:
 		if killErr := docker.DockerClient.ContainerKill(ctx, resp.ID, "SIGKILL"); killErr != nil {
 			if strings.Contains(strings.ToLower(killErr.Error()), "is not running") {
@@ -206,6 +208,7 @@ func StartPersistentSandbox(ctx context.Context, workDir string, memoryLimitMB i
 	}
 
 	if err := docker.DockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		RemoveSandbox(ctx, resp.ID)
 		return "", fmt.Errorf("start sandbox failed: %w", err)
 	}
 
@@ -246,6 +249,8 @@ func ExecTestCase(ctx context.Context, containerID string, input string, cpuLimi
 		return model.JudgeResult{Status: model.StatusSystemError, Error: fmt.Errorf("attach exec failed: %w", err)}
 	}
 	defer hijackedResp.Close()
+	stopClose := context.AfterFunc(ctx, func() { hijackedResp.Close() })
+	defer stopClose()
 
 	_, _ = hijackedResp.Conn.Write([]byte(input))
 	_ = hijackedResp.CloseWrite()

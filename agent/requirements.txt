@@ -6,4 +6,5 @@ qdrant-client
 python-dotenv
 dashscope
 langchain
+langgraph
 langchain-deepseek

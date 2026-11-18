@@ -30,8 +30,8 @@ services:
   judge-worker:
     mem_limit: 128m
     environment:
-      # Compile containers have their own 512 MiB hard limit. Keeping one
-      # worker prevents three compilers from consuming 1.5 GiB concurrently.
+      # One formal judge slot, plus the dedicated trial slot if enabled.
+      # Each compile container has its own 512 MiB hard limit.
       GOJO_JUDGE_WORKER_COUNT: "1"
       GOJO_SQL_MAX_OPEN_CONNS: "4"
       GOJO_SQL_MAX_IDLE_CONNS: "2"

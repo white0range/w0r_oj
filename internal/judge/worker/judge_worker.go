@@ -47,7 +47,7 @@ func NewJudgeWorker(svc *service.JudgeService, submissions pendingSubmissionProv
 	return &JudgeWorker{svc: svc, queue: judgeQueue.New(), submissions: submissions}
 }
 
-func (w *JudgeWorker) StartWorkerPool(workerCount int) {
+func (w *JudgeWorker) StartWorkerPool(workerCount int, trialEnabled bool) {
 	startupCtx := context.Background()
 	if err := w.queue.RecoverExpired(startupCtx, time.Now()); err != nil {
 		log.Printf("recover expired judge tasks at startup failed: %v", err)
@@ -59,6 +59,13 @@ func (w *JudgeWorker) StartWorkerPool(workerCount int) {
 	log.Printf("starting judge worker pool, workers=%d", workerCount)
 
 	w.workers.Add(workerCount + 3)
+	if trialEnabled {
+		w.workers.Add(1)
+		go func() {
+			defer w.workers.Done()
+			w.runTrials(w.acceptCtx, w.taskCtx)
+		}()
+	}
 	for i := 1; i <= workerCount; i++ {
 		workerID := i
 		go func() {

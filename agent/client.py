@@ -34,9 +34,9 @@ def _get(path: str, auth: AgentToolAuth, params: dict | None = None) -> dict:
     return _response_json(resp)
 
 
-def _post(path: str, auth: AgentToolAuth, payload: dict | None = None) -> dict:
+def _post(path: str, auth: AgentToolAuth, payload: dict | None = None, *, timeout: int = 10) -> dict:
     url = f"{GO_BACKEND_BASE_URL}{path}"
-    resp = requests.post(url, headers=_build_headers(auth), json=payload or {}, timeout=10)
+    resp = requests.post(url, headers=_build_headers(auth), json=payload or {}, timeout=timeout)
     return _response_json(resp)
 
 
@@ -69,6 +69,10 @@ def get_user_failed_submissions(auth: AgentToolAuth, limit: int = 10) -> dict:
 
 def get_failed_submission_detail(submission_id: int, auth: AgentToolAuth) -> dict:
     return _get(f"/api/agent/me/failed-submissions/{submission_id}", auth)
+
+
+def trial_submission(submission_id: int, trial_input: str, auth: AgentToolAuth) -> dict:
+    return _post("/api/agent/trials", auth, {"submission_id": submission_id, "input": trial_input}, timeout=32)["data"]
 
 
 def get_user_tag_stats(auth: AgentToolAuth) -> dict:
