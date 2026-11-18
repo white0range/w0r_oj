@@ -48,6 +48,8 @@ Go API 处理业务请求，在同一进程中运行 Chat Worker、Sync Worker �
 
 编译与运行容器都使用 `golang:alpine`，关闭网络，并限制 CPU、内存与进程数。Runner 还限制运行时间和输出规模。Worker 任务结束后清理容器及临时目录，启动时按环境标签清理异常退出遗留的容器，并在自己的 `TMPDIR` 下清理遗留工作目录。沙箱仍与 Judge Worker 所在机器共享宿主机内核。
 
+题目页可以直接运行编辑器里的 Go 代码和一组自定义输入。网页任务与 Agent 共用试跑队列和专用执行槽。队列按用户限制同时挂起的网页任务，运行结果短暂保存在 Redis。正式判题的测试用例、提交状态和得分由提交队列维护。
+
 ## 学习助手
 
 用户发出消息后，Go API 将消息与回合写入 MySQL，再进入 Chat 队列。Chat Worker 领取回合并调用 Python `/chat/run`。Python 通过统一的 LangGraph 入口选择对话流程。

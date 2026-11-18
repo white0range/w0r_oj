@@ -73,3 +73,19 @@ func TestAgentRoutesAreIndependentOfAdminAndUserAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestRunCodeRequiresUserAuthentication(t *testing.T) {
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = config.Config{}
+	config.GlobalConfig.Chat.AgentServiceToken = "test-service-secret"
+	gin.SetMode(gin.TestMode)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/problems/12/run", nil)
+	request.Header.Set("X-Agent-Service-Token", "test-service-secret")
+	result := httptest.NewRecorder()
+	router.ServeHTTP(result, request)
+	if result.Code != http.StatusUnauthorized {
+		t.Fatalf("run code status=%d, want=%d", result.Code, http.StatusUnauthorized)
+	}
+}

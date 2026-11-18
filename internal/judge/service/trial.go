@@ -12,13 +12,12 @@ import (
 	"gojo/internal/judge/trial"
 	"gojo/internal/problem/limits"
 	problemRepo "gojo/internal/problem/repository"
-	submissionModel "gojo/internal/submission/model"
 )
 
-// RunTrial recompiles a submission and runs only the supplied input.
-func RunTrial(ctx context.Context, submission *submissionModel.Submission, input string) trial.Result {
+// RunTrial compiles one source buffer and runs only the supplied input.
+func RunTrial(ctx context.Context, problemID, submissionID uint, code, input string) trial.Result {
 	failure := trial.Result{Status: "system_error"}
-	problem, err := problemRepo.NewProblemRepository().GetProblemByID(ctx, strconv.FormatUint(uint64(submission.ProblemID), 10))
+	problem, err := problemRepo.NewProblemRepository().GetProblemByID(ctx, strconv.FormatUint(uint64(problemID), 10))
 	if err != nil || !limits.ValidTimeMS(problem.TimeLimit) || !limits.ValidMemoryMB(problem.MemoryLimit) {
 		return failure
 	}
@@ -28,14 +27,14 @@ func RunTrial(ctx context.Context, submission *submissionModel.Submission, input
 	}
 	defer os.RemoveAll(workDir)
 
-	compiled, info, err := sandbox.CompileCode(ctx, submission.Code, workDir, submission.ID)
+	compiled, info, err := sandbox.CompileCode(ctx, code, workDir, submissionID)
 	if err != nil {
 		return failure
 	}
 	if !compiled {
 		return trialOutput(string(judgeModel.StatusCompileError), info, 0)
 	}
-	containerID, err := sandbox.StartPersistentSandbox(ctx, workDir, int64(problem.MemoryLimit), submission.ID)
+	containerID, err := sandbox.StartPersistentSandbox(ctx, workDir, int64(problem.MemoryLimit), submissionID)
 	if err != nil {
 		return failure
 	}

@@ -175,6 +175,11 @@ export async function submitCode(payload) {
   }
 }
 
+export async function runProblemCode(problemId, payload, signal) {
+  const body = getBody(await api.post(`/problems/${problemId}/run`, payload, { signal, timeout: 35000 }))
+  return unwrapData(body)
+}
+
 export async function getSubmission(id) {
   const body = getBody(await api.get(`/submissions/${id}`))
   return normalizeSubmission(unwrapData(body))

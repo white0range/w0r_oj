@@ -90,6 +90,7 @@ func SetupRouter(
 
 		protected.GET("/profile", uHandler.GetProfile)
 
+		protected.POST("/problems/:id/run", middlewares2.RunCodeRateLimit(), pHandler.RunCode)
 		protected.POST("/submit", middlewares2.SubmitRateLimit(), sHandler.SubmitCode)
 		protected.GET("/submissions/:id", sHandler.GetSubmissionResult)
 		protected.GET("/my-submissions", sHandler.GetMySubmissions)

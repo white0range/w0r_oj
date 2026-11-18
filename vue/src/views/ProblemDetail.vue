@@ -48,13 +48,11 @@
 
         <article class="card stack submit-panel">
           <div class="section-title">
-            <h2>在线提交</h2>
-            <span class="muted">CODE & SUBMIT</span>
+            <h2>代码工作区</h2>
           </div>
 
           <div v-if="!store.isLoggedIn" class="empty-state compact-state">
-            <strong>登录后才能提交代码</strong>
-            <span class="muted">登录后即可编写代码、提交判题并记录你的解题进度。</span>
+            <strong>登录后可运行和提交代码</strong>
             <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }" class="btn btn-primary">去登录</router-link>
           </div>
 
@@ -66,15 +64,13 @@
               </select>
             </div>
 
+            <GoCodeEditor :key="draftKey" :model-value="code" @update:model-value="updateDraft" />
+            <p v-if="draftStorageUnavailable" class="muted" role="status">浏览器暂时无法保存草稿。</p>
+
             <div class="field">
-              <label for="code">代码编辑器</label>
-              <textarea
-                id="code"
-                v-model="code"
-                class="textarea mono code-editor"
-                spellcheck="false" autocapitalize="off" autocomplete="off"
-                :placeholder="placeholderByLanguage[language]"
-              ></textarea>
+              <label for="run-input">自定义输入</label>
+              <textarea id="run-input" v-model="runInput" class="textarea mono run-input" rows="3"
+                placeholder="程序从标准输入读取的数据，可以留空"></textarea>
             </div>
 
             <div class="cluster">
@@ -82,7 +78,20 @@
                 <span v-if="submitting" class="spinner"></span><span v-if="submitting">提交中…</span>
                 <span v-else>提交判题</span>
               </button>
-              <button class="btn btn-outline" @click="code = placeholderByLanguage[language]">插入模板</button>
+              <button class="btn btn-outline" :disabled="running || !code.trim()" @click="handleRun">
+                {{ running ? '运行中…' : '运行代码' }}
+              </button>
+              <button class="btn btn-ghost" :disabled="code === starterCode" @click="updateDraft(starterCode)">恢复模板</button>
+            </div>
+
+            <div v-if="runResult || runError" role="status" aria-live="polite" class="submit-feedback"
+              :class="runResult?.status === 'ok' ? 'success' : 'warning'">
+              <div>
+                <strong>{{ runError || (runStatusLabels[runResult.status] ?? '运行结束') }}</strong>
+                <p v-if="runResult && runResult.status !== 'CE'">运行耗时 {{ runResult.duration_ms }} ms</p>
+                <pre v-if="runResult" class="run-output">{{ runResult.output || '（无输出）' }}</pre>
+                <p v-if="runResult?.truncated">输出已截断。</p>
+              </div>
             </div>
 
             <div v-if="submitState" role="status" aria-live="polite" class="submit-feedback" :class="submitState.kind">
@@ -111,9 +120,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { createEventsTicket, getErrorMessage, getProblemDetail, getSubmission, submitCode } from '../api'
+import { createEventsTicket, getErrorMessage, getProblemDetail, getSubmission, runProblemCode, submitCode } from '../api'
+import GoCodeEditor from '../components/GoCodeEditor.vue'
 import { store } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
 
@@ -123,6 +133,11 @@ const submitting = ref(false)
 const problem = ref(null)
 const language = ref('go')
 const code = ref('')
+const draftStorageUnavailable = ref(false)
+const runInput = ref('')
+const running = ref(false)
+const runResult = ref(null)
+const runError = ref('')
 const submitState = ref(null)
 const currentSubmissionId = ref(0)
 
@@ -130,13 +145,27 @@ let socket = null
 let pollTimer = null
 let socketFallbackTimer = null
 let suppressSocketFallback = false
+let runController = null
+let problemRequest = 0
+let submitRequest = 0
 
 const SOCKET_FALLBACK_DELAY_MS = 4000
 const POLL_INTERVAL_MS = 2000
 
-const placeholderByLanguage = {
-  go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello Gojo")\n}',
+const starterCode = 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello Gojo")\n}\n'
+const runStatusLabels = {
+  ok: '运行成功',
+  CE: '编译错误',
+  RE: '运行错误',
+  TLE: '运行超时',
+  MLE: '内存超限',
+  OLE: '输出超限',
 }
+const draftKey = computed(() => {
+  const problemId = Number(route.params.id)
+  if (!store.isLoggedIn || !store.userId || !Number.isSafeInteger(problemId) || problemId <= 0) return ''
+  return `gojo:draft:${store.userId}:${problemId}:${language.value}`
+})
 
 const renderedDescription = computed(() => {
   const text = problem.value?.description || ''
@@ -149,14 +178,17 @@ function isSubmissionPending() {
 }
 
 async function fetchProblem() {
+  const id = route.params.id
+  const request = ++problemRequest
   loading.value = true
 
   try {
-    problem.value = await getProblemDetail(route.params.id)
+    const result = await getProblemDetail(id)
+    if (request === problemRequest) problem.value = result
   } catch {
-    problem.value = null
+    if (request === problemRequest) problem.value = null
   } finally {
-    loading.value = false
+    if (request === problemRequest) loading.value = false
   }
 }
 
@@ -191,12 +223,14 @@ function startPolling() {
 }
 
 async function refreshSubmission() {
-  if (!currentSubmissionId.value) {
+  const submissionId = currentSubmissionId.value
+  if (!submissionId) {
     return
   }
 
   try {
-    const submission = await getSubmission(currentSubmissionId.value)
+    const submission = await getSubmission(submissionId)
+    if (submissionId !== currentSubmissionId.value) return
     if (submission.status !== 'Pending') {
       submitState.value = {
         kind: submission.status === 'AC' ? 'success' : 'warning',
@@ -226,7 +260,7 @@ async function openSocket(submissionId) {
 
   try {
     const ticket = await createEventsTicket()
-    if (!ticket || !isSubmissionPending()) {
+    if (!ticket || submissionId !== currentSubmissionId.value || !isSubmissionPending()) {
       startPolling()
       return
     }
@@ -278,6 +312,7 @@ async function openSocket(submissionId) {
   }
 }
 async function handleSubmit() {
+  const request = ++submitRequest
   submitting.value = true
   submitState.value = null
 
@@ -287,6 +322,7 @@ async function handleSubmit() {
       language: language.value,
       code: code.value,
     })
+    if (request !== submitRequest) return
 
     currentSubmissionId.value = result.submissionId
     submitState.value = {
@@ -299,6 +335,7 @@ async function handleSubmit() {
     stopPolling()
     openSocket(result.submissionId)
   } catch (requestError) {
+    if (request !== submitRequest) return
     submitState.value = {
       kind: 'danger',
       title: '提交失败',
@@ -306,12 +343,73 @@ async function handleSubmit() {
       submissionId: 0,
     }
   } finally {
-    submitting.value = false
+    if (request === submitRequest) submitting.value = false
   }
 }
 
-onMounted(fetchProblem)
+function updateDraft(value) {
+  code.value = value
+  if (!draftKey.value) return
+  try {
+    localStorage.setItem(draftKey.value, value)
+    draftStorageUnavailable.value = false
+  } catch {
+    draftStorageUnavailable.value = true
+  }
+}
+
+async function handleRun() {
+  if (running.value || !code.value.trim() || !problem.value) return
+  const controller = new AbortController()
+  runController = controller
+  running.value = true
+  runResult.value = null
+  runError.value = ''
+  try {
+    const result = await runProblemCode(problem.value.id, { code: code.value, input: runInput.value }, controller.signal)
+    if (runController === controller) runResult.value = result
+  } catch (error) {
+    if (runController === controller) runError.value = getErrorMessage(error, '运行请求未完成，请稍后再试。')
+  } finally {
+    if (runController === controller) {
+      runController = null
+      running.value = false
+    }
+  }
+}
+
+watch(draftKey, (key) => {
+  runController?.abort()
+  runController = null
+  running.value = false
+  runInput.value = ''
+  runResult.value = null
+  runError.value = ''
+  currentSubmissionId.value = 0
+  submitState.value = null
+  submitting.value = false
+  submitRequest++
+  stopSocketFallbackTimer()
+  closeSocket()
+  stopPolling()
+
+  draftStorageUnavailable.value = false
+  code.value = key ? starterCode : ''
+  if (!key) return
+  try {
+    code.value = localStorage.getItem(key) ?? starterCode
+  } catch {
+    draftStorageUnavailable.value = true
+  }
+}, { immediate: true, flush: 'sync' })
+
+watch(() => route.params.id, fetchProblem, { immediate: true })
 onUnmounted(() => {
+  problemRequest++
+  submitRequest++
+  currentSubmissionId.value = 0
+  runController?.abort()
+  runController = null
   stopSocketFallbackTimer()
   closeSocket()
   stopPolling()
@@ -401,13 +499,20 @@ onUnmounted(() => {
   padding: 28px 18px;
 }
 
-.code-editor {
-  min-height: 380px;
-  line-height: 1.9;
-  tab-size: 4;
-  background: var(--surface-dark);
-  color: #edf3ff;
-  border-color: rgba(255, 255, 255, 0.08);
+.run-input {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.run-output {
+  max-height: 190px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  background: #fff;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .submit-feedback {

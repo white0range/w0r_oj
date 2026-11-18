@@ -62,6 +62,10 @@ func SubmitRateLimit() gin.HandlerFunc {
 	}
 }
 
+func RunCodeRateLimit() gin.HandlerFunc {
+	return userRateLimit("run_code", 6, time.Minute)
+}
+
 func ChatMessageRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := currentUserID(c)

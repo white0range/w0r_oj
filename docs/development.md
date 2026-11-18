@@ -12,7 +12,7 @@
 
 Go 在宿主机运行时，从 YAML 和 Go 进程环境获取配置。`.env` 中的 MySQL 账号和密码须与 Go DSN 对应，`REDIS_PASSWORD` 对应 `redis.password`，`AGENT_SERVICE_TOKEN` 对应 `chat.agent_service_token`。MySQL 数据卷已有数据时，账号仍沿用初始化时的值。
 
-Go API 启动时通过 GORM 初始化业务表。Judge Worker 使用同一套数据库配置读取题目和写入判题结果。若需测试 Agent 试跑，在 **Go API 和 Judge Worker** 的启动环境里都设置 `GOJO_JUDGE_TRIAL_ENABLED=true`，或在两者共用的开发 YAML 中设置 `judge.trial_enabled: true`。
+Go API 启动时通过 GORM 初始化业务表。Judge Worker 使用同一套数据库配置读取题目和写入判题结果。题目页的「运行代码」和 Agent 试跑共用执行槽。在 **Go API 和 Judge Worker** 的启动环境里都设置 `GOJO_JUDGE_TRIAL_ENABLED=true`，或在两者共用的开发 YAML 中设置 `judge.trial_enabled: true` 即可启用。
 
 ## 开发端口
 

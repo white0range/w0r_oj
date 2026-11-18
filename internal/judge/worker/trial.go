@@ -37,18 +37,31 @@ func (w *JudgeWorker) runTrials(acceptCtx, taskCtx context.Context) {
 			ctx, cancel := context.WithDeadline(taskCtx, task.Deadline)
 			result := runTrial(ctx, task)
 			if ctx.Err() == nil {
-				if err := trial.Publish(ctx, task.TurnID, result); err != nil {
-					log.Printf("[chat] turn_id=%d stage=trial_publish_failed", task.TurnID)
+				if err := trial.Publish(ctx, task, result); err != nil {
+					log.Printf("judge trial publish failed turn_id=%d", task.TurnID)
 				}
 			}
-			log.Printf("[chat] turn_id=%d stage=trial_done status=%s", task.TurnID, result.Status)
+			if task.CodeRun != nil {
+				log.Printf("[judge] run_id=%s stage=trial_done status=%s", task.CodeRun.ID, result.Status)
+			} else {
+				log.Printf("[chat] turn_id=%d stage=trial_done status=%s", task.TurnID, result.Status)
+			}
 			cancel()
 		}
 	}
 }
 
 func runTrial(ctx context.Context, task trial.Task) trial.Result {
-	if task.TurnID == 0 || task.SubmissionID == 0 || len(task.Input) > trial.MaxInputBytes {
+	if len(task.Input) > trial.MaxInputBytes {
+		return trial.Result{Status: "system_error"}
+	}
+	if run := task.CodeRun; run != nil {
+		if run.ID == "" || run.UserID == 0 || run.ProblemID == 0 || len(run.Code) == 0 || len(run.Code) > trial.MaxCodeBytes {
+			return trial.Result{Status: "system_error"}
+		}
+		return service.RunTrial(ctx, run.ProblemID, 0, run.Code, task.Input)
+	}
+	if task.TurnID == 0 || task.SubmissionID == 0 {
 		return trial.Result{Status: "system_error"}
 	}
 	turns := chatRepo.NewChatRepository()
@@ -71,7 +84,7 @@ func runTrial(ctx context.Context, task trial.Task) trial.Result {
 		return trial.Result{Status: "system_error"}
 	}
 	log.Printf("[chat] turn_id=%d stage=trial_start submission_id=%d", task.TurnID, task.SubmissionID)
-	result := service.RunTrial(ctx, submission, task.Input)
+	result := service.RunTrial(ctx, submission.ProblemID, submission.ID, submission.Code, task.Input)
 	turn, err = turns.GetTurnByID(ctx, task.TurnID)
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && !currentTrialAttempt(turn, task.AttemptHash, time.Now())) {
 		return trial.Result{Status: "stale"}

@@ -70,7 +70,7 @@ func (h *AgentToolHandler) RunTrial(c *gin.Context) {
 		return
 	}
 	log.Printf("[chat] turn_id=%d stage=trial_queued", turnID)
-	result, err := trial.Wait(ctx, turnID)
+	result, err := trial.Wait(ctx, task)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		log.Printf("[chat] turn_id=%d stage=trial_timeout", turnID)
