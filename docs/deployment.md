@@ -88,6 +88,57 @@ gojo_compose ps
 
 Go API、Judge Worker 和 Python Agent 的配合以同一仓库版本为准。更新前备份业务数据库。MySQL、Redis、Elasticsearch 和 Qdrant 使用命名数据卷。站点路由由网关镜像中的 [Nginx 配置](../nginx/default.conf)提供，配置更新时需重建 `gateway`。
 
+### GitHub Actions 自动部署
+
+[发布工作流](../.github/workflows/deploy.yml)在 `main` 更新时运行 Go、Python 测试和 Vue 构建。检查通过且仓库变量 `GOJO_DEPLOY_ENABLED` 为 `true` 时，才以 `gojo-deploy` 用户连接腾讯云并发送本次测试通过的提交号。也可以在 GitHub Actions 手动运行同一工作流，部署仍限定在 `main`。
+
+[部署脚本](../ops/gojo-deploy.sh)针对现有腾讯云部署，使用 `/home/ubuntu/w0r_oj`、`gojo-local-production` 和现有生产环境文件。它用锁串行部署，确认目标仍为远端 `main` 最新提交，逐个构建镜像，更新服务后通过网关检查 `/ping`。检查成功才更新 `/home/ubuntu/.local/state/gojo-deploy/deployed-sha`。
+
+#### 服务器端一次性设置
+
+由服务器管理员在审阅脚本后执行。为 Actions 创建 `gojo-deploy` 登录用户，交由现有的 `ubuntu` 用户执行固定脚本。安装目录及脚本由 `root` 管理。安装前确认生产检出目录位于干净的 `main` 分支，并确认 `ubuntu` 可以拉取 `origin` 和更新现有 Compose 项目。
+
+```bash
+sudo adduser --disabled-password --gecos '' gojo-deploy
+sudo install -o root -g root -m 0755 ops/gojo-deploy.sh /usr/local/sbin/gojo-deploy
+sudo install -d -o gojo-deploy -g gojo-deploy -m 0700 /home/gojo-deploy/.ssh
+sudo visudo -f /etc/sudoers.d/gojo-deploy
+```
+
+在 `visudo` 中加入这一行。末尾的 `""` 将匹配范围限定为无命令行参数的调用。
+
+```sudoers
+gojo-deploy ALL=(ubuntu) NOPASSWD: /usr/local/sbin/gojo-deploy ""
+```
+
+在自己的电脑上生成 Actions 专用密钥。工作流使用此密钥进行非交互登录。
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/gojo_actions_deploy -C gojo-actions-deploy -N ''
+```
+
+用 `sudoedit /home/gojo-deploy/.ssh/authorized_keys` 写入下面这一行，把 `ssh-ed25519 ...` 换成 `.pub` 文件的完整一行。将文件权限设为 `0600`，所有者设为 `gojo-deploy`。给这个用户保留这一条带 `restrict` 和强制命令的公钥，原有 `ubuntu` 登录继续由管理员维护。
+
+```text
+restrict,command="/usr/local/sbin/gojo-deploy --ssh" ssh-ed25519 ...
+```
+
+这条 SSH 密钥只能调用固定部署命令，`gojo-deploy` 无需加入 Docker 组。服务器管理员仍需信任能进入 `main` 的部署代码。Gojo OJ 的 Judge Worker 使用宿主机 Docker Socket，同机项目之间的运行权限由服务器管理员负责隔离。
+
+#### GitHub 端配置
+
+在仓库的 **Settings → Environments** 中创建 `production` 环境，将可部署分支限制在 `main`，并添加以下环境 Secrets。
+
+| Secret | 内容 |
+| --- | --- |
+| `DEPLOY_HOST` | 服务器公网地址，使用 SSH 的 TCP 22 端口 |
+| `DEPLOY_SSH_KEY` | 专用私钥 `gojo_actions_deploy` 的完整内容 |
+| `DEPLOY_KNOWN_HOSTS` | 从服务器控制台核验的主机公钥记录。格式为 `服务器地址 ssh-ed25519 公钥内容`，地址与 `DEPLOY_HOST` 一致 |
+
+主机公钥可通过已登录的腾讯云控制台读取，例如 `cat /etc/ssh/ssh_host_ed25519_key.pub`。生产环境文件继续保存在部署目录。配置完成后，在 **Settings → Secrets and variables → Actions → Variables** 添加仓库变量 `GOJO_DEPLOY_ENABLED=true`，在 **Actions** 手动运行一次工作流验证。随后合并或推送到 `main` 会自动部署。
+
+部署失败时，Actions 会保留失败步骤日志，服务器上的 `deployed-sha` 表示最近一次探活通过的版本。探活失败时容器可能已经替换，检查生产日志后，可通过在 `main` 上回退问题提交来重新部署。
+
 ## 日志与排障
 
 Go 和 Python 日志输出到标准输出，由 Docker 收集。4 GiB 配置使用 `json-file`，每个文件最大 10 MB，每个容器保留最多 3 个日志文件。Agent 事件使用 `turn_id` 关联，模型回调可记录耗时、错误类型和模型返回的 Token 用量。回合重试可通过日志中的 `attempt_id` 区分。
