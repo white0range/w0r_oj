@@ -73,6 +73,8 @@ APP_ENV=dev DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.
 
 [docker-compose.prod.yml](docker-compose.prod.yml) 提供单机生产拓扑。[docker-compose.4g.yml](docker-compose.4g.yml) 可叠加使用，为 4 GiB 主机限制容器内存和 Worker 并发。Compose 网关默认只监听 `127.0.0.1:8088`，公网 HTTPS 由宿主机反向代理终止。[生产部署指南](docs/deployment.md)包含配置、初始化、更新和日志查询命令。
 
+`main` 更新时，GitHub Actions 自动运行 Go、Python 测试和 Vue 构建。启用自动部署后，通过检查的提交会部署到腾讯云。脚本更新服务后检查 `/ping`，成功后记录上线版本。[自动部署配置](docs/deployment.md#github-actions-自动部署)
+
 ## 仓库结构
 
 | 路径 | 职责 |
