@@ -47,7 +47,7 @@ func SetupRouter(
 	r.POST("/api/refresh", uHandler.Refresh)
 	r.POST("/api/logout", uHandler.Logout)
 
-	r.GET("/api/problems", pHandler.GetProblemList)
+	r.GET("/api/problems", middlewares2.OptionalAuth(), pHandler.GetProblemList)
 	r.GET("/api/problems/:id", pHandler.GetProblemDetail)
 	r.GET("/api/tags", tHandler.GetTagList)
 	r.GET("/api/leaderboard", middlewares2.OptionalAuth(), lHandler.GetGlobalLeaderboard)
