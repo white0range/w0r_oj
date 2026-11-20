@@ -47,6 +47,7 @@ gojo_compose() {
 
 gojo_compose config --quiet
 docker pull golang:alpine
+docker build -f Dockerfile.judge-compiler -t gojo-judge-compiler:go1.26-v1 .
 gojo_compose build
 ```
 
@@ -82,6 +83,8 @@ Go 的 `server.trusted_proxy_cidrs` 默认是空列表。处于反向代理后�
 
 ```bash
 gojo_compose config --quiet
+docker image inspect gojo-judge-compiler:go1.26-v1 >/dev/null 2>&1 || \
+  docker build -f Dockerfile.judge-compiler -t gojo-judge-compiler:go1.26-v1 .
 gojo_compose up -d --build
 gojo_compose ps
 ```
@@ -110,6 +113,8 @@ sudo visudo -f /etc/sudoers.d/gojo-deploy
 ```sudoers
 gojo-deploy ALL=(ubuntu) NOPASSWD: /usr/local/sbin/gojo-deploy ""
 ```
+
+已有自动部署的服务器可在审阅新版脚本后重新执行上面的 `sudo install` 命令。新版脚本会复用本机已有的判题编译镜像，缺少时在更新服务前构建。调整编译镜像的 Dockerfile 时，更新 Worker 与部署命令中的镜像版本标签。宿主机上暂时缺少预热镜像时，Judge Worker 使用 `golang:alpine` 冷编译。
 
 在自己的电脑上生成 Actions 专用密钥。工作流使用此密钥进行非交互登录。
 
@@ -154,6 +159,7 @@ gojo_compose logs --no-color api agent judge-worker 2>&1 | rg 'turn_id=87([^0-9]
 | --- | --- |
 | `/ping` 无法访问 | 查看 `gateway` 和 `api` 状态，检查端口和依赖服务是否已就绪 |
 | 判题积压，或出现 `SE` | 查看 `judge-worker` 日志，检查 Docker Socket 组权限、`golang:alpine` 镜像和工作目录写权限 |
+| 判题或试跑编译慢 | 用 `docker image inspect gojo-judge-compiler:go1.26-v1` 检查预热镜像是否已构建 |
 | Agent 请求返回 401 | 核对 Go 与 Python 的服务密钥，确认 Python 用内网 API 地址访问工具 |
 | 对话停在等待或处理中 | 检查 API、Agent 日志及 `chat_turn_queue`、`chat_turn_processing` 队列，按 `turn_id` 核对执行状态 |
 | 搜索或向量索引更新缓慢 | 查看 Elasticsearch、Agent 和 Qdrant 日志，检查 `sync:pending`、`sync:processing`、`sync:retry_at` 和 `sync:dead_letter` 的积压 |

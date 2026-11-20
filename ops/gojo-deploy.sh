@@ -44,6 +44,10 @@ compose=(docker compose --project-name gojo-local-production --env-file .env.loc
 
 echo "Deploying $revision from checkout $previous_checkout."
 "${compose[@]}" config --quiet
+judge_compiler_image=gojo-judge-compiler:go1.26-v1
+if ! docker image inspect "$judge_compiler_image" >/dev/null 2>&1; then
+  docker build -f Dockerfile.judge-compiler -t "$judge_compiler_image" .
+fi
 "${compose[@]}" --parallel 1 build
 "${compose[@]}" up --no-build --wait --wait-timeout 180
 # Nginx resolves the API address when it starts. Refresh it after a rollout.

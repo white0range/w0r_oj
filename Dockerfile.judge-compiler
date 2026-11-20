@@ -1,0 +1,7 @@
+FROM golang:1.26-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468
+
+# Seed the build cache using the same toolchain and flags as the judge.
+RUN CGO_ENABLED=0 GO111MODULE=off GOCACHE=/opt/gojo/cache-seed go build \
+        fmt bufio strconv sort strings math container/heap \
+        encoding/json flag os/exec \
+    && chmod -R a+rX /opt/gojo/cache-seed

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
@@ -41,6 +43,7 @@ type runnerExecResult struct {
 const (
 	linuxSIGXCPU          = 24
 	defaultCompileTimeout = 45 * time.Second
+	judgeCompilerImage    = "gojo-judge-compiler:go1.26-v1"
 	judgeRuntimeImage     = "golang:alpine"
 	judgeContainerUser    = "65532:65532"
 	judgeWorkDirPrefix    = "judge_"
@@ -58,6 +61,18 @@ const (
 	maxCompileOutputBytes   = 1 << 20
 	maxRunnerResponseBytes  = 2 << 20
 )
+
+const compileCommand = `
+set -eu
+mkdir -p "$GOCACHE"
+if [ -d /opt/gojo/cache-seed ] && ! cp -R /opt/gojo/cache-seed/. "$GOCACHE/"; then
+    rm -rf /go-cache/task
+    mkdir -p "$GOCACHE"
+fi
+ulimit -f 65536
+go build -o solution main.go || exit 11
+go build -o .judge/runner .judge/runner.go || exit 12
+`
 
 type OrphanCleanupSummary struct {
 	ContainersRemoved int
@@ -77,38 +92,43 @@ func CompileCode(ctx context.Context, code string, workDir string, submissionID 
 		return false, "", fmt.Errorf("prepare judge runner failed: %w", err)
 	}
 
-	resp, err := docker.DockerClient.ContainerCreate(ctx,
-		&container.Config{
-			Image:      judgeRuntimeImage,
-			User:       judgeContainerUser,
-			WorkingDir: "/app",
-			Labels:     sandboxLabels("compile", submissionID),
-			Env: []string{
-				"HOME=/tmp",
-				"GOCACHE=/tmp/go-build",
-				"GOTMPDIR=/tmp",
-				"CGO_ENABLED=0",
-			},
-			Cmd: []string{
-				"sh",
-				"-c",
-				"ulimit -f 65536; if ! GO111MODULE=off go build -o solution main.go; then exit 11; fi; if ! GO111MODULE=off go build -o .judge/runner .judge/runner.go; then exit 12; fi",
-			},
+	containerConfig := &container.Config{
+		Image:      judgeCompilerImage,
+		User:       judgeContainerUser,
+		WorkingDir: "/app",
+		Labels:     sandboxLabels("compile", submissionID),
+		Env: []string{
+			"HOME=/tmp",
+			"GOCACHE=/go-cache/task",
+			"GOTMPDIR=/tmp",
+			"CGO_ENABLED=0",
+			"GO111MODULE=off",
 		},
-		&container.HostConfig{
-			NetworkMode:    "none",
-			Binds:          []string{workDir + ":/app:rw"},
-			ReadonlyRootfs: true,
-			CapDrop:        []string{"ALL"},
-			SecurityOpt:    []string{"no-new-privileges:true"},
-			Tmpfs:          map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
-			Resources: container.Resources{
-				Memory:     compileMemoryLimitBytes,
-				MemorySwap: compileMemoryLimitBytes,
-				NanoCPUs:   compileNanoCPUs,
-				PidsLimit:  int64Ptr(compilePidsLimit),
-			},
-		}, nil, nil, "")
+		Cmd: []string{"sh", "-c", compileCommand},
+	}
+	hostConfig := &container.HostConfig{
+		NetworkMode:    "none",
+		Binds:          []string{workDir + ":/app:rw"},
+		ReadonlyRootfs: true,
+		CapDrop:        []string{"ALL"},
+		SecurityOpt:    []string{"no-new-privileges:true"},
+		Tmpfs: map[string]string{
+			"/tmp":      "rw,nosuid,nodev,size=128m",
+			"/go-cache": "rw,nosuid,nodev,noexec,size=128m,mode=0700,uid=65532,gid=65532",
+		},
+		Resources: container.Resources{
+			Memory:     compileMemoryLimitBytes,
+			MemorySwap: compileMemoryLimitBytes,
+			NanoCPUs:   compileNanoCPUs,
+			PidsLimit:  int64Ptr(compilePidsLimit),
+		},
+	}
+	resp, err := docker.DockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if errdefs.IsNotFound(err) {
+		log.Printf("judge compiler image %s unavailable, using cold compiler %s", judgeCompilerImage, judgeRuntimeImage)
+		containerConfig.Image = judgeRuntimeImage
+		resp, err = docker.DockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	}
 	if err != nil {
 		return false, "", err
 	}

@@ -60,6 +60,7 @@ APP_ENV=dev go run ./cmd/server
 
 ```bash
 docker pull golang:alpine
+docker build -f Dockerfile.judge-compiler -t gojo-judge-compiler:go1.26-v1 .
 mkdir -p "$HOME/.cache/gojo-judge-dev"
 APP_ENV=dev DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')" \
   TMPDIR="$HOME/.cache/gojo-judge-dev" go run ./cmd/judge_worker
