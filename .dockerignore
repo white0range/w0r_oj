@@ -13,8 +13,8 @@ config/config.test.yaml
 # Build outputs and dependencies are rebuilt in their own Docker stages
 server.exe
 *.exe
-vue/node_modules
-vue/dist
+frontend/node_modules
+frontend/dist
 node_modules
 
 # Local data and logs must never be copied into an image

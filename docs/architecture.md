@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart LR
-    Browser["浏览器"] --> Gateway["Nginx · Vue 静态站点"]
+    Browser["浏览器"] --> Gateway["Nginx · React 静态站点"]
     Gateway -->|"HTTP / SSE"| API["Go API · Chat Worker · Sync Worker"]
     API --> MySQL[("MySQL")]
     API --> Redis[("Redis")]

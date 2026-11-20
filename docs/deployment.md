@@ -1,12 +1,12 @@
 # 生产部署与运维
 
-本指南适用于在单台 Linux 主机上使用 Docker Compose v2 部署 Gojo OJ。Vue 静态文件由 Nginx 网关提供，Go API、Judge Worker、Python Agent、MySQL、Redis、Elasticsearch 和 Qdrant 运行在私有 Compose 网络中。
+本指南适用于在单台 Linux 主机上使用 Docker Compose v2 部署 w0r_oj。React 静态文件由 Nginx 网关提供，Go API、Judge Worker、Python Agent、MySQL、Redis、Elasticsearch 和 Qdrant 运行在私有 Compose 网络中。
 
 ## Compose 文件
 
 | 文件 | 用途 |
 | --- | --- |
-| [docker-compose.yml](../docker-compose.yml) | 本地开发。启动 Vue 开发服务和基础依赖，应用进程在宿主机运行 |
+| [docker-compose.yml](../docker-compose.yml) | 本地开发。启动 Vite 前端开发服务和基础依赖，应用进程在宿主机运行 |
 | [docker-compose.prod.yml](../docker-compose.prod.yml) | 完整的单机生产服务定义，可独立使用 |
 | [docker-compose.4g.yml](../docker-compose.4g.yml) | 按服务名覆盖生产资源配置，适用于 4 GiB 主机 |
 
@@ -93,7 +93,7 @@ Go API、Judge Worker 和 Python Agent 的配合以同一仓库版本为准。�
 
 ### GitHub Actions 自动部署
 
-[发布工作流](../.github/workflows/deploy.yml)在 `main` 更新时运行 Go、Python 测试和 Vue 构建。检查通过且仓库变量 `GOJO_DEPLOY_ENABLED` 为 `true` 时，才以 `gojo-deploy` 用户连接腾讯云并发送本次测试通过的提交号。也可以在 GitHub Actions 手动运行同一工作流，部署仍限定在 `main`。
+[发布工作流](../.github/workflows/deploy.yml)在 `main` 更新时运行 Go、Python 测试和 React 前端构建。检查通过且仓库变量 `GOJO_DEPLOY_ENABLED` 为 `true` 时，才以 `gojo-deploy` 用户连接腾讯云并发送本次测试通过的提交号。也可以在 GitHub Actions 手动运行同一工作流，部署仍限定在 `main`。
 
 [部署脚本](../ops/gojo-deploy.sh)针对现有腾讯云部署，使用 `/home/ubuntu/w0r_oj`、`gojo-local-production` 和现有生产环境文件。它用锁串行部署，确认目标仍为远端 `main` 最新提交，逐个构建镜像，更新服务后通过网关检查 `/ping`。检查成功才更新 `/home/ubuntu/.local/state/gojo-deploy/deployed-sha`。
 
@@ -128,7 +128,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/gojo_actions_deploy -C gojo-actions-deploy -N ''
 restrict,command="/usr/local/sbin/gojo-deploy --ssh" ssh-ed25519 ...
 ```
 
-这条 SSH 密钥只能调用固定部署命令，`gojo-deploy` 无需加入 Docker 组。服务器管理员仍需信任能进入 `main` 的部署代码。Gojo OJ 的 Judge Worker 使用宿主机 Docker Socket，同机项目之间的运行权限由服务器管理员负责隔离。
+这条 SSH 密钥只能调用固定部署命令，`gojo-deploy` 无需加入 Docker 组。服务器管理员仍需信任能进入 `main` 的部署代码。w0r_oj 的 Judge Worker 使用宿主机 Docker Socket，同机项目之间的运行权限由服务器管理员负责隔离。
 
 #### GitHub 端配置
 

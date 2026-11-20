@@ -1,4 +1,4 @@
-# Gojo OJ 文档
+# w0r_oj 文档
 
 [项目首页与快速启动](../README.md)
 

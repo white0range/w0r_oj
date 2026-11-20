@@ -38,7 +38,7 @@ func SetupRouter(
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "success",
-			"message": "welcome to gojo oj",
+			"message": "welcome to w0r_oj",
 		})
 	})
 

@@ -18,7 +18,7 @@ Go API 启动时通过 GORM 初始化业务表。Judge Worker 使用同一套数
 
 | 服务 | 默认入口 |
 | --- | --- |
-| Vue | `http://localhost:3000` |
+| 前端 | `http://localhost:3000` |
 | Go API | `http://127.0.0.1:8080/ping` |
 | Python Agent | `http://127.0.0.1:8000/ping` |
 | MySQL | `127.0.0.1:3306` |
@@ -27,14 +27,14 @@ Go API 启动时通过 GORM 初始化业务表。Judge Worker 使用同一套数
 | Qdrant | `http://127.0.0.1:6333/collections` |
 | Kibana | `http://127.0.0.1:5601`，通过 `docker compose --profile debug up -d kibana` 启动 |
 
-### 在宿主机运行 Vue
+### 在宿主机运行前端
 
 使用 Node.js 22。适用于需要直接在宿主机调试前端，或 Docker Engine 无法解析 `host.docker.internal` 的场景。
 
 ```bash
 docker compose stop frontend
 docker compose up -d --build mysql redis elasticsearch qdrant
-cd vue
+cd frontend
 npm ci
 GOJO_API_PROXY=http://127.0.0.1:8080 npm run dev -- --strictPort
 ```
@@ -60,7 +60,7 @@ unset BOOTSTRAP_ADMIN_PASSWORD
 go test ./...
 go build ./...
 .venv/bin/python -m unittest discover -s agent
-(cd vue && npm ci && npm run build)
+(cd frontend && npm ci && npm run build)
 ```
 
 MySQL、Redis 和 Qdrant 的集成测试通过测试专用环境变量启用，默认跳过。Redis 测试需要可丢弃的实例。测试条件见 [Go 同步队列集成测试](../internal/syncer/chat_memory_integration_test.go)和 [Python 记忆集成测试](../agent/test_execution_fencing.py)。

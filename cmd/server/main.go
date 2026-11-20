@@ -47,7 +47,7 @@ type shutdownResult struct {
 }
 
 func main() {
-	fmt.Println("starting Gojo backend...")
+	fmt.Println("starting w0r_oj backend...")
 
 	shutdownSignalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
@@ -159,7 +159,7 @@ func main() {
 	}
 
 	closeInfrastructure()
-	log.Printf("Gojo backend stopped")
+	log.Printf("w0r_oj backend stopped")
 }
 
 func shutdownHTTPServer(ctx context.Context, server *http.Server) error {

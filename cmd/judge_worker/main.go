@@ -27,7 +27,7 @@ const (
 )
 
 func main() {
-	fmt.Println("starting Gojo judge worker...")
+	fmt.Println("starting w0r_oj judge worker...")
 
 	shutdownSignalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
@@ -71,7 +71,7 @@ func main() {
 	}
 
 	closeInfrastructure()
-	log.Printf("Gojo judge worker stopped")
+	log.Printf("w0r_oj judge worker stopped")
 }
 
 func closeInfrastructure() {

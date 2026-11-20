@@ -1,4 +1,4 @@
-# Gojo OJ 项目审查与改进清单
+# w0r_oj 项目审查与改进清单
 
 审查日期为 2026-11-09，代码基线为 `main` 的 `0b00ebf`。范围包括提交判题、Agent 权限、题库体验、索引同步和服务启动。
 
@@ -36,14 +36,14 @@ Chat Worker 会选取一个活跃管理员，并把该管理员的普通访问�
 
 ### 5. 修复题库进度和实时判题状态
 
-题库列表路由缺少可选鉴权，服务层拿不到登录用户的 ID，导致「本页已通过」无法正确计算。提交页和提交详情页在 SSE 连上后会停止轮询，若结果早于连接建立，页面可能停在 `Pending`。 [题库路由](../internal/app/routes.go#L48) · [通过状态计算](../internal/problem/service/problem_service.go#L150) · [提交页 SSE](../vue/src/views/ProblemDetail.vue#L239) · [详情页 SSE](../vue/src/views/SubmissionDetail.vue#L137)
+题库列表路由缺少可选鉴权，服务层拿不到登录用户的 ID，导致「本页已通过」无法正确计算。提交页和提交详情页在 SSE 连上后会停止轮询，若结果早于连接建立，页面可能停在 `Pending`。 [题库路由](../internal/app/routes.go#L48) · [通过状态计算](../internal/problem/service/problem_service.go#L150) · [提交页 SSE](https://github.com/white0range/w0r_oj/blob/0b00ebf/vue/src/views/ProblemDetail.vue#L247) · [详情页 SSE](https://github.com/white0range/w0r_oj/blob/0b00ebf/vue/src/views/SubmissionDetail.vue#L145)
 
 - 改进建议：接入现有的可选鉴权，保留公共题库缓存，在返回前合并用户自己的通过状态。SSE 建立时主动查询一次提交，等待期间保留低频轮询作为兜底。
 - 验收条件：已通过和未通过的两个用户看到各自的题库状态。判题先于 SSE 连接完成，或通知丢失时，页面仍会显示终态。
 
 ### 6. 把题库搜索扩展到全库
 
-首页搜索只过滤当前页的数据。已有 Elasticsearch 搜索接口支持关键词和标签，但单次最多返回 50 条且没有分页参数。 [首页搜索](../vue/src/views/Home.vue#L37) · [搜索查询](../internal/problem/repository/search_repo.go#L28)
+首页搜索只过滤当前页的数据。已有 Elasticsearch 搜索接口支持关键词和标签，但单次最多返回 50 条且没有分页参数。 [首页搜索](https://github.com/white0range/w0r_oj/blob/0b00ebf/vue/src/views/Home.vue#L101) · [搜索查询](../internal/problem/repository/search_repo.go#L28)
 
 - 改进建议：让首页复用服务端搜索，补充分页、总数和题号精确匹配，保留标签筛选。
 - 验收条件：可以从首页找到其他分页中的题目，结果总数、分页和标签筛选一致。
@@ -65,3 +65,12 @@ Elasticsearch 连接或索引初始化失败会中止 Go API 启动。`/ping` �
 ## 验证记录
 
 `go test -mod=readonly ./...` 已通过。本机 Docker daemon 未运行，隐藏用例反馈、沙箱故障重试和完整判题链路仍需在 Linux Docker 环境做端到端验证。
+
+## 后续可迭代目标
+
+### 判题 Worker 阻塞领取任务
+
+记录于 2026-11-19。正式判题 Worker 空闲时，每 200 毫秒查询一次 Redis。有任务时，通过 Lua 将任务从待领取队列移到处理中队列，并在同一次操作中登记租约。 [Worker 轮询](../internal/judge/worker/judge_worker.go#L132) · [Redis 领取逻辑](../internal/judge/queue/queue.go#L64)
+
+- **改进建议**。评估 Redis 阻塞领取，让 Worker 在队列为空时等待，有任务时由 Redis 返回领取结果。空闲查询量或领取延迟成为负担时，可考虑采用 `BLMOVE`。 [Redis BLMOVE 文档](https://redis.io/docs/latest/commands/blmove/)
+- **验收条件**。空队列时停止固定间隔查询，新任务入队后空闲 Worker 可以及时领取。结果落库后再确认任务，Worker 在任务移入处理中队列后、租约登记前退出时，任务仍能被恢复。停止进程时，等待中的 Worker 可以及时退出。
