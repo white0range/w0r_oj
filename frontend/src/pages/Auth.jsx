@@ -11,7 +11,8 @@ export default function Auth({ register = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const returnTo = safeReturnTo(params.get('redirect'))
-  const libraryFrom = location.state?.libraryFrom
+  const { libraryFrom, workbenchPane } = location.state || {}
+  const returnState = { libraryFrom, workbenchPane }
   const alternate = register ? '/login' : '/register'
   const query = returnTo === '/' ? '' : `?${new URLSearchParams({ redirect: returnTo })}`
   const [username, setUsername] = useState(location.state?.username || '')
@@ -35,12 +36,12 @@ export default function Auth({ register = false }) {
     try {
       if (register) {
         await registerUser(payload)
-        navigate('/login' + query, { replace: true, state: { registered: true, username: payload.username, libraryFrom } })
+        navigate('/login' + query, { replace: true, state: { ...returnState, registered: true, username: payload.username } })
       } else {
         const { accessToken } = await loginUser(payload)
         if (!accessToken) throw new Error('Missing access token')
         store.login(accessToken)
-        navigate(returnTo, { replace: true, state: libraryFrom ? { libraryFrom } : undefined })
+        navigate(returnTo, { replace: true, state: returnState })
       }
     } catch (err) {
       setError(getErrorMessage(err, register ? '注册失败，请检查输入后重试。' : '登录失败，请检查用户名和密码。'))
@@ -62,7 +63,7 @@ export default function Auth({ register = false }) {
       <label className="field">密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 6 : undefined} maxLength={128} required /></label>
       {register && <label className="field">确认密码<input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required /></label>}
       <button className="btn primary" disabled={loading || !username.trim()}>{loading ? '正在处理…' : title}</button>
-      <Link className="text-link" to={alternate + query} state={{ libraryFrom }}>{register ? '已有账号，去登录' : '还没有账号，立即注册'}</Link>
+      <Link className="text-link" to={alternate + query} state={returnState}>{register ? '已有账号，去登录' : '还没有账号，立即注册'}</Link>
     </form>
   </section>
 }

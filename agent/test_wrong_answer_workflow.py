@@ -30,7 +30,9 @@ class WrongAnswerWorkflowTests(TestCase):
 
     def test_enough_evidence_answers_directly(self):
         self.diagnose.return_value.needs_trial = False
-        self.assertEqual(self.run_workflow().answer, "初步分析")
+        answer = self.run_workflow()
+        self.assertEqual(answer.answer, "初步分析")
+        self.assertIsNone(answer.trial)
         self.detail.assert_called_once_with(42, self.auth)
         self.trial.assert_not_called()
         self.model.invoke.assert_not_called()
@@ -42,13 +44,17 @@ class WrongAnswerWorkflowTests(TestCase):
         answer = self.run_workflow()
         self.assertEqual(answer.answer, "实际输出 -1，预期 0。")
         self.assertEqual(answer.response_type, "analysis")
+        self.assertEqual(answer.trial.status, "ok")
+        self.assertEqual(answer.trial.output, "-1\n")
         self.trial.assert_called_once_with(42, "0\n", self.auth)
         self.model.invoke.assert_called_once()
         self.assertIn('"output": "-1', self.model.invoke.call_args.args[0][1][1])
 
     def test_trial_timeout_preserves_unverified_analysis(self):
         self.trial.side_effect = requests.Timeout()
-        self.assertIn("还没有经过运行验证", self.run_workflow().answer)
+        answer = self.run_workflow()
+        self.assertIn("还没有经过运行验证", answer.answer)
+        self.assertEqual(answer.trial.status, "unavailable")
         self.trial.assert_called_once()
         self.model.invoke.assert_not_called()
 

@@ -2,6 +2,29 @@ import { useEffect, useRef } from 'react'
 import { basicSetup, EditorView } from 'codemirror'
 import { completeFromList, ifNotIn, snippetCompletion } from '@codemirror/autocomplete'
 import { go, goLanguage } from '@codemirror/lang-go'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
+
+const ink = EditorView.theme({
+  '&': { backgroundColor: '#141a2d', color: '#e2e8f8' },
+  '.cm-content': { caretColor: '#e2e8f8' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#d7d9ff' },
+  '.cm-gutters': { backgroundColor: '#141a2d', color: '#8695b1', borderRight: '1px solid #252d44' },
+  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: '#212943' },
+  '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': { backgroundColor: '#374470' },
+  '.cm-tooltip': { backgroundColor: '#202941', color: '#e2e8f8', borderColor: '#424e6e' },
+  '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: '#393d76', color: '#fff' },
+  '.cm-matchingBracket': { backgroundColor: '#33415c', outline: '1px solid #6f80ab' },
+}, { dark: true })
+
+const syntax = HighlightStyle.define([
+  { tag: [tags.keyword, tags.modifier], color: '#c5adff' },
+  { tag: [tags.string, tags.special(tags.string)], color: '#a6e0be' },
+  { tag: [tags.number, tags.bool], color: '#ffd294' },
+  { tag: [tags.typeName, tags.className, tags.definition(tags.variableName)], color: '#99ceff' },
+  { tag: tags.comment, color: '#a0abc4', fontStyle: 'italic' },
+  { tag: tags.operator, color: '#b8c4e1' },
+])
 
 const members = {
   fmt: ['Print', 'Printf', 'Println', 'Scan', 'Scanln', 'Fprint', 'Fprintf', 'Fprintln', 'Fscan', 'Sprintf'],
@@ -41,6 +64,8 @@ export default function GoCodeEditor({ value, onChange }) {
       doc: latest.current.value,
       extensions: [
         basicSetup,
+        ink,
+        syntaxHighlighting(syntax),
         go(),
         goLanguage.data.of({ autocomplete: packageCompletion }),
         goLanguage.data.of({ autocomplete: ifNotIn(['String', 'LineComment', 'BlockComment'], completeFromList([ioSnippet])) }),

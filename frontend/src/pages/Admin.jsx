@@ -5,6 +5,7 @@ import {
   adminDeleteTag, adminDeleteTestCase, adminGetTestCases, adminGetUsers, adminUnbanUser,
   adminUpdateProblem, adminUpdateProblemTags, getErrorMessage, getProblemDetail, getProblems, getTags,
 } from '../api'
+import Icon from '../components/Icon'
 import { Notice, PageHeader, Pager, ResourceState, State, positiveInt } from '../components/ui'
 import { useResource } from '../utils/useResource'
 
@@ -252,11 +253,13 @@ function ProblemForm({ id, tags, detail }) {
   }
 
   return <form className="stack admin-form" onSubmit={save}>
-    <ActionsNotice result={result} />
     <fieldset className="panel padded stack" disabled={busy}>
       <h2>题目信息</h2>
       <label>题名<input required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
       <label>题面<textarea required rows={9} maxLength={32768} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+    </fieldset>
+    <fieldset className="panel padded stack" disabled={busy}>
+      <h2>运行限制与知识点</h2>
       <div className="two-columns">
         <label>时间限制（ms）<input required type="number" min={100} max={10000} value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} /></label>
         <label>内存限制（MB）<input required type="number" min={16} max={512} value={memoryLimit} onChange={(event) => setMemoryLimit(event.target.value)} /></label>
@@ -301,9 +304,12 @@ function ProblemForm({ id, tags, detail }) {
       </div>)}
       {!drafts.length && !cases.loading && !cases.data?.items.length && <p className="muted">还没有测试用例。</p>}
     </fieldset>
-    <div className="stack-inline">
-      <button className="btn primary" disabled={busy}>{busy ? '保存中…' : id ? '保存修改' : '创建题目'}</button>
-      <Link to="/admin/problems" className="btn outline">返回题目管理</Link>
+    <div className="panel admin-savebar stack">
+      <ActionsNotice result={result} />
+      <div className="stack-inline">
+        <button className="btn primary" disabled={busy}>{busy ? '保存中…' : id ? '保存修改' : '创建题目'}</button>
+        <Link to="/admin/problems" className="btn outline">返回题目管理</Link>
+      </div>
     </div>
   </form>
 }
@@ -312,10 +318,10 @@ export default function Admin({ view }) {
   const { id } = useParams()
   const problemId = positiveInt(id, 0)
   const title = { problems: '题目管理', users: '用户管理', tags: '知识点管理', edit: id ? `编辑题目 #${id}` : '新建题目' }[view]
-  return <div className="page">
+  return <div className="page admin-page">
     <PageHeader title={title}>{view === 'problems' && <Link to="/admin/problems/new" className="btn primary">新建题目</Link>}</PageHeader>
     <nav className="tabs" aria-label="管理后台">
-      <NavLink to="/admin/problems">题目</NavLink><NavLink to="/admin/tags">知识点</NavLink><NavLink to="/admin/users">用户</NavLink>
+      <NavLink to="/admin/problems"><Icon name="book" />题目</NavLink><NavLink to="/admin/tags"><Icon name="tag" />知识点</NavLink><NavLink to="/admin/users"><Icon name="user" />用户</NavLink>
     </nav>
     {view === 'problems' && <AdminProblems />}
     {view === 'tags' && <AdminTags />}

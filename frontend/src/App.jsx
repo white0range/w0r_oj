@@ -43,7 +43,7 @@ function Header() {
 
   return <header className="site-header">
     <div className="header-inner">
-      <Link to="/" className="wordmark" aria-label="w0r_oj 首页"><span><Icon name="code" /></span>w0r_oj</Link>
+      <Link to="/" className="wordmark" aria-label="w0r_oj 首页"><span className="brand-mark"><Icon name="terminal" /></span><span className="brand-name">w0r<b>_</b>oj</span></Link>
       <nav className="site-nav" aria-label="主导航">
         <Link to="/" className={inLibrary ? 'active' : undefined} aria-current={inLibrary ? 'page' : undefined}><Icon name="book" />题库</Link>
         {session.token && <NavLink to="/my-submissions"><Icon name="history" />提交记录</NavLink>}
@@ -86,7 +86,7 @@ export default function App() {
   const { pathname } = useLocation()
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
 
-  return <div className="site-shell">
+  return <div className={pathname.startsWith('/problems/') ? 'site-shell focused' : 'site-shell'}>
     <a href="#main-content" className="skip-link">跳到主要内容</a>
     <Header />
     <main id="main-content" className="site-main" tabIndex={-1}>

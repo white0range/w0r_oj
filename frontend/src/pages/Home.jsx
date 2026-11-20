@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { getProblemDetail, getProblems, getProfile, getTags, searchProblems } from '../api'
+import { getMySubmissions, getProblemDetail, getProblems, getProfile, getTags, searchProblems } from '../api'
 import Icon from '../components/Icon'
-import { Notice, Pager, ResourceState, State, positiveInt, usePageTitle } from '../components/ui'
+import { Notice, Pager, ResourceState, State, Status, positiveInt, usePageTitle } from '../components/ui'
 import { useSession } from '../store'
 import { getAcceptanceRate } from '../utils/normalizers'
 import { useResource } from '../utils/useResource'
@@ -20,6 +20,8 @@ export default function Home() {
   const [input, setInput] = useState(query)
   usePageTitle('题库')
 
+  const loadRecent = useCallback(() => userId > 0 ? getMySubmissions({ page: 1, limit: 1 }) : null, [userId])
+  const recent = useResource(loadRecent).data?.items[0]
   const tags = useResource(getTags)
   const activeTag = tags.data?.find((tag) => tag.id === tagId)
   const tagName = activeTag?.name
@@ -83,10 +85,15 @@ export default function Home() {
   return <div className="page library">
     <section className="library-header">
       <div>
-        <span className="library-category"><Icon name="code" /> Go 在线判题</span>
-        <h1>算法题库</h1>
+        <span className="library-category"><Icon name="terminal" /> Go 算法练习</span>
+        <h1>算法题库<span className="heading-cursor" aria-hidden="true" /></h1>
       </div>
-      <Link to="/chat" className="btn on-dark"><Icon name="sparkles" /> AI 学习助手 <Icon name="arrow" /></Link>
+      {recent?.problemId > 0 ? <Link to={`/problems/${recent.problemId}`} className="resume-card"
+        state={{ libraryFrom: pathname + search, workbenchPane: 'code' }}>
+        <span className="resume-icon"><Icon name="history" /></span>
+        <div><span>继续练习</span><strong>{recent.problemTitle || `题目 #${recent.problemId}`}</strong></div>
+        <Status value={recent.status} /><Icon name="arrow" />
+      </Link> : <Link to="/chat" className="btn on-dark"><Icon name="sparkles" />AI 学习助手<Icon name="arrow" /></Link>}
     </section>
 
     <section className="panel catalog" aria-label="题目列表">
@@ -108,6 +115,11 @@ export default function Home() {
           </select>
         </label>
       </div>
+      {tags.data?.length > 0 && <div className="quick-tags" role="group" aria-label="快速筛选知识点">
+        <button type="button" aria-pressed={!tagId} onClick={() => apply({ tag: '' })}>全部</button>
+        {tags.data.slice(0, 6).map((tag) => <button key={tag.id} type="button" aria-pressed={tagId === tag.id}
+          onClick={() => apply({ tag: tagId === tag.id ? '' : tag.id })}>{tag.name}</button>)}
+      </div>}
       {tags.error && <div className="panel-note"><Notice>知识点标签加载失败。 <button className="text-button" onClick={tags.reload}>重试</button></Notice></div>}
       <ResourceState resource={waitingForTag ? { loading: true } : result} failure="题库加载失败" />
       {!waitingForTag && !(needsTagName && tags.error) && !result.loading && !result.error && <>
@@ -122,9 +134,12 @@ export default function Home() {
             {shown.map((problem) => <Link key={problem.id} className="problem-row problem-link"
               to={`/problems/${problem.id}`} state={{ libraryFrom: pathname + search }}>
               <span className="problem-number">#{problem.id}</span>
-              <span className="problem-name">{isSolved(problem) && <span className="solved-mark" title="已通过" aria-label="已通过"><Icon name="check" /></span>}<strong>{problem.title}</strong></span>
+              <span className="problem-name"><strong>{problem.title}</strong>{isSolved(problem) && <span className="solved-mark"><Icon name="check" />已通过</span>}</span>
               <span className="row-tags">{problem.tags.map((tag) => <span key={tag.id || tag.name} className="tag">{tag.name}</span>)}</span>
-              <span className="problem-rate">{problem.submitCount ? `${getAcceptanceRate(problem)}%` : '—'}</span>
+              <span className="problem-rate">{problem.submitCount ? <>
+                <span>{getAcceptanceRate(problem)}%</span><span className="rate-track" aria-hidden="true">
+                  <span style={{ width: `${getAcceptanceRate(problem)}%` }} /></span>
+              </> : '—'}</span>
             </Link>)}
           </div>
           <Pager page={page} limit={PAGE_SIZE} total={available} onChange={(number) => apply({ page: number })} />

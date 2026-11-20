@@ -23,11 +23,19 @@ class RecommendedProblem(BaseModel):
     title: str
     reason: str
 
+class TrialRecord(BaseModel):
+    status: str
+    output: str = ""
+    duration_ms: int | None = None
+    truncated: bool = False
+
+
 class ChatResult(BaseModel):
     answer: str
     weak_tags: list[str] = Field(default_factory=list)
     recommended_problems: list[RecommendedProblem] = Field(default_factory=list)
     response_type: str = "qa"
+    trial: TrialRecord | None = None
 
 class ChatResponse(BaseModel):
     message: str

@@ -50,6 +50,10 @@ const statuses = {
   MLE: '内存超限', OLE: '输出超限', SE: '系统错误', Pending: '判题中',
 }
 
+export function canReviewSubmission(status) {
+  return ['WA', 'CE', 'RE', 'TLE', 'MLE', 'OLE'].includes(status)
+}
+
 export function Status({ value }) {
   const tone = value === 'AC' ? 'good' : value === 'Pending' ? 'waiting' : 'bad'
   return <span className={`status ${tone}`} title={value}>{statuses[value] || value}</span>

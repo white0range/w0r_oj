@@ -2,16 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
   createChatSession, deleteChatSession, getChatMessages, getChatPlanFeedback, getChatSession,
-  getErrorMessage, listChatSessions, sendChatMessage, submitChatPlanFeedback,
+  getErrorMessage, getSubmission, listChatSessions, sendChatMessage, submitChatPlanFeedback,
 } from '../api'
 import Icon from '../components/Icon'
-import { Notice, PageHeader, ResourceState, State, formatDate, positiveInt } from '../components/ui'
+import RichText from '../components/RichText'
+import { Notice, PageHeader, ResourceState, State, Status, formatDate, positiveInt } from '../components/ui'
 import { useSession } from '../store'
 import { pendingTurn, watchChatTurn } from '../utils/chatTurn'
 import { useResource } from '../utils/useResource'
 
 const prompts = ['分析我最近一次没通过的提交', '推荐一道适合我练习的题', '讲讲二分查找容易写错的边界']
 const listSessions = () => listChatSessions({ limit: 50 })
+const reviewQuestion = (id) => `请帮我分析提交 #${id} 没通过的原因，并给出修改建议。`
 const sessionTitle = (session) => session?.title?.trim() || '新会话'
 
 function Feedback({ turnId }) {
@@ -57,14 +59,47 @@ function getAssistantPayload(value) {
   try { return typeof value === 'string' ? JSON.parse(value) : value } catch { return null }
 }
 
+function TrialRecord({ trial }) {
+  if (trial.status === 'unavailable') return <div className="trial-record">
+    <h3>试跑记录</h3><p>本次未取得可用于验证的试跑结果。</p>
+  </div>
+  return <details className="trial-record">
+    <summary><strong>试跑记录</strong>{trial.status === 'ok' ? <span className="status good">运行完成</span> : <Status value={trial.status} />}</summary>
+    <pre className="code-output">{trial.output || '（无输出）'}</pre>
+    {(Number.isFinite(trial.duration_ms) || trial.truncated) && <p>
+      {Number.isFinite(trial.duration_ms) && `程序执行 ${trial.duration_ms} ms`}{trial.truncated && ' · 输出已截断'}
+    </p>}
+  </details>
+}
+
+function ReviewContext({ submissionId }) {
+  const load = useCallback(() => getSubmission(submissionId), [submissionId])
+  const resource = useResource(load)
+  const reference = resource.data
+  return <section className="review-context" aria-label="本次分析的提交">
+    <div className="review-reference">
+      <span className="chat-symbol"><Icon name="file" /></span>
+      <div><span className="muted">分析提交 #{submissionId}</span>
+        <strong>{reference?.problemTitle || (reference?.problemId ? `题目 #${reference.problemId}` : '错题复盘')}</strong></div>
+    </div>
+    {resource.loading && <span className="muted" role="status">读取提交…</span>}
+    {resource.error && <button type="button" className="text-button" onClick={resource.reload}>提交读取失败，重试</button>}
+    {reference && <div className="stack-inline">
+      <Status value={reference.status} />
+      <Link to={`/problems/${reference.problemId}`} state={{ workbenchPane: 'code' }} className="btn outline sm">返回原题<Icon name="arrow" /></Link>
+    </div>}
+  </section>
+}
+
 function Message({ item }) {
   const assistant = item.role === 'assistant'
   const payload = assistant ? getAssistantPayload(item.structured_payload) : null
   const tags = Array.isArray(payload?.weak_tags) ? payload.weak_tags : []
   const recommendations = Array.isArray(payload?.recommended_problems) ? payload.recommended_problems : []
   return <article className={`chat-message ${assistant ? 'assistant' : 'user'}`}>
-    <div className="message-meta"><strong>{assistant ? '学习助手' : '你'}</strong><span>{formatDate(item.created_at)}</span></div>
-    <div className="message-content">{payload?.answer || item.content}</div>
+    <div className="message-meta">{assistant && <Icon name="sparkles" />}<strong>{assistant ? '学习助手' : '你'}</strong><span>{formatDate(item.created_at)}</span></div>
+    {assistant ? <RichText text={payload?.answer || item.content} className="message-content" /> : <div className="message-content">{item.content}</div>}
+    {assistant && payload?.trial?.status && <TrialRecord trial={payload.trial} />}
     {tags.length > 0 && <div className="stack-inline">{tags.map((tag, index) => <span className="tag" key={index}>{tag}</span>)}</div>}
     {recommendations.map((problem) => <Link className="recommendation" key={problem.problem_id} to={`/problems/${problem.problem_id}`}>
       <strong>{problem.title || `题目 #${problem.problem_id}`} <Icon name="arrow" /></strong>
@@ -74,7 +109,7 @@ function Message({ item }) {
   </article>
 }
 
-function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdateSessions, consumeSubmission }) {
+function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdateSessions }) {
   const load = useCallback(async () => {
     if (!id) return { session: null, items: [] }
     const [session, items] = await Promise.all([getChatSession(id), getChatMessages(id)])
@@ -82,7 +117,7 @@ function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdate
   }, [id])
   const thread = useResource(load)
   const reloadThread = thread.reload
-  const [draft, setDraft] = useState(submission ? `请帮我分析提交 #${submission} 没通过的原因，并给出修改建议。` : '')
+  const [draft, setDraft] = useState(!id && submission ? reviewQuestion(submission) : '')
   const [sending, setSending] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [error, setError] = useState('')
@@ -106,11 +141,14 @@ function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdate
 
   useEffect(() => () => { active.current = false }, [])
   useEffect(() => {
-    if (submission) setDraft(`请帮我分析提交 #${submission} 没通过的原因，并给出修改建议。`)
-  }, [submission])
-  useEffect(() => {
     const view = threadView.current
-    if (view) view.scrollTop = view.scrollHeight
+    if (!view) return
+    const reply = view.querySelector('.chat-message.assistant:last-of-type')
+    if (reply && !isPending) {
+      view.scrollTop += reply.getBoundingClientRect().top - view.getBoundingClientRect().top - 12
+    } else {
+      view.scrollTop = view.scrollHeight
+    }
   }, [items.length, isPending])
 
   useEffect(() => {
@@ -135,7 +173,7 @@ function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdate
     try {
       let sessionId = id || temporaryId.current
       if (!sessionId) {
-        const created = await createChatSession({ title: '' })
+        const created = await createChatSession({ title: submission ? `提交 #${submission} 复盘` : '' })
         sessionId = positiveInt(created.id, 0)
         if (!sessionId) throw new Error('Missing session ID')
         temporaryId.current = sessionId
@@ -144,9 +182,8 @@ function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdate
       if (!active.current) return
       setLastQuestion(content)
       setDraft('')
-      if (!id) onSelect(sessionId)
+      if (!id) onSelect(sessionId, submission)
       else {
-        consumeSubmission()
         setSentTurn({ id: positiveInt(response.turn_id, 0), status: response.status })
         reloadThread()
       }
@@ -173,19 +210,20 @@ function Conversation({ id, listEntry, submission, onSelect, onArchive, onUpdate
     }
   }
 
-  return <section className="panel conversation">
+  return <section className={`panel conversation${submission ? ' reviewing' : ''}`}>
     <header className="conversation-head"><h2>{id ? sessionTitle(thread.data?.session || listEntry) : '新会话'}</h2>
       {id > 0 && <div className="stack-inline">
         <button className="text-button" disabled={thread.loading} onClick={() => { setStatusError(''); reloadThread(); setWatchVersion((value) => value + 1) }}>刷新</button>
         <button className="text-button danger-text" disabled={busy} onClick={archive}>{archiving ? '归档中…' : '归档'}</button>
       </div>}
     </header>
+    {submission > 0 && <ReviewContext submissionId={submission} />}
     <div className="thread" ref={threadView}>
       {id > 0 && !items.length && <ResourceState resource={thread} loading="正在读取消息…" failure="会话加载失败" />}
       {thread.data?.session?.summary_text && <details className="memory-note"><summary>会话摘要</summary><p>{thread.data.session.summary_text}</p></details>}
       {!thread.loading && !thread.error && !items.length && <div className="chat-welcome">
-        <span className="chat-symbol"><Icon name="sparkles" /></span><h3>从一个算法问题开始</h3>
-        <div className="prompt-list">{prompts.map((prompt) => <button className="btn outline" key={prompt}
+        <span className="chat-symbol"><Icon name="sparkles" /></span><h3>{submission ? `复盘提交 #${submission}` : '从一个算法问题开始'}</h3>
+        <div className="prompt-list">{(submission ? [reviewQuestion(submission)] : prompts).map((prompt) => <button className="btn outline" key={prompt}
           disabled={busy} onClick={() => { setDraft(prompt); composerInput.current?.focus() }}>{prompt}<Icon name="arrow" /></button>)}</div>
       </div>}
       {items.map((item) => <Message key={item.id} item={item} />)}
@@ -220,16 +258,17 @@ export default function Chat() {
   let stored = 0
   try { stored = positiveInt(localStorage.getItem(storageKey) || localStorage.getItem('gojo:chatSessionId'), 0) } catch {}
   const recent = sessions.data || []
-  const selected = params.has('session') ? positiveInt(params.get('session'), 0)
-    : (recent.find((item) => item.id === stored) || recent[0])?.id || 0
   const submission = positiveInt(params.get('submission'), 0)
+  const selected = params.has('session') ? positiveInt(params.get('session'), 0)
+    : submission ? 0 : (recent.find((item) => item.id === stored) || recent[0])?.id || 0
 
-  function select(id) {
+  function select(id, reviewId = 0) {
     try { localStorage.setItem(storageKey, String(id)) } catch {}
     setParams((previous) => {
       const next = new URLSearchParams(previous)
       next.set('session', String(id))
-      next.delete('submission')
+      if (reviewId) next.set('submission', String(reviewId))
+      else next.delete('submission')
       return next
     }, { replace: true })
   }
@@ -259,18 +298,14 @@ export default function Chat() {
         <ResourceState resource={sessions} loading="读取会话…" failure="会话列表加载失败" />
         {!sessions.loading && !sessions.error && !recent.length && <State title="还没有会话" />}
         {recent.map((session) => <button key={session.id} className="session-item" aria-current={selected === session.id ? 'true' : undefined}
-          onClick={() => select(session.id)}>
+          onClick={() => select(session.id, session.id === selected ? submission : 0)}>
           <strong>{sessionTitle(session)}</strong><span>{formatDate(session.last_message_at || session.updated_at)}</span>
         </button>)}
       </aside>
-      <Conversation key={selected} id={selected} submission={submission}
+      <Conversation key={`${selected}:${submission}`} id={selected} submission={submission}
         listEntry={recent.find((entry) => entry.id === selected)} onSelect={select}
         onUpdateSessions={sessions.reload}
-        onArchive={(archived) => { select(recent.find((entry) => entry.id !== archived)?.id || 0); sessions.reload() }}
-        consumeSubmission={() => {
-          if (!params.has('submission')) return
-          setParams((previous) => { const next = new URLSearchParams(previous); next.delete('submission'); return next }, { replace: true })
-        }} />
+        onArchive={(archived) => { select(recent.find((entry) => entry.id !== archived)?.id || 0); sessions.reload() }} />
     </div>
   </div>
 }
